@@ -13,11 +13,12 @@
 
 ## Verification snapshot
 
-- Dashboard typecheck, lint, 5 behavior tests, and production build: **PASS**.
+- Dashboard typecheck, lint, 15 behavior tests, and production build: **PASS**.
 - Dashboard production dependency audit (`npm audit --omit=dev`): **0 vulnerabilities**.
 - Indexer unit tests: **7/7 PASS**.
 - Active Python source Ruff and ty checks: **PASS**.
 - Broader historical Python suite: **76 passed, 1 skipped, 2 failed** because two old source-text assertions no longer match preserved historical proof scripts. Frozen/historical scripts were not edited to manufacture a pass.
+- Optional indexer is observed-only: it reports what the worker reached and cannot prove complete history, identity, eligibility, rewards, or FLOP allocation. No reward or FLOP allocation is guaranteed.
 
 ## Frozen evidence hashes (not distributed here)
 

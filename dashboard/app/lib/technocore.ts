@@ -1,5 +1,28 @@
 const MAX_UPSTREAM_BYTES = 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 6000;
+const INDEXER_MAX_RESULTS = 50;
+const ROOM_PATTERN = /^[a-z0-9][a-z0-9_-]{0,47}$/;
+const MAX_TIMESTAMP = 64;
+const MAX_WRITER = 512;
+const MAX_TEXT = 16384;
+const MAX_NONCE = 128;
+
+export type TrustMode = "observer" | "browser-did" | "trusted-local-signer";
+export type IndexerHealth = {
+  configured: boolean;
+  reachable: boolean;
+  worker_fresh?: boolean;
+  messages?: number;
+  scope: "observed_only";
+};
+export type IndexerSearchResult = {
+  room: string;
+  seq: number;
+  ts: string;
+  writer: string;
+  text: string;
+  nonce?: string | null;
+};
 
 export type Room = {
   name: string;
@@ -37,6 +60,24 @@ function nonNegativeSafeInteger(value: unknown): number | undefined {
 
 function requiredString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
+}
+
+export function normalizeTrustMode(value: unknown): TrustMode {
+  return value === "browser-did" || value === "trusted-local-signer" ? value : "observer";
+}
+
+export function normalizeIndexerUrl(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length > 2048 || !value.trim()) return undefined;
+  try {
+    const url = new URL(value.trim());
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.hash || url.search) return undefined;
+    if (url.pathname !== "" && url.pathname !== "/") return undefined;
+    const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]" || url.hostname === "::1";
+    if (url.protocol !== "https:" && !loopback) return undefined;
+    return url.origin;
+  } catch {
+    return undefined;
+  }
 }
 
 async function readBoundedJson(response: Response): Promise<unknown> {
@@ -91,6 +132,67 @@ export async function fetchTechnocoreJson(url: string): Promise<unknown> {
   }
 
   return readBoundedJson(response);
+}
+
+export async function fetchTechnocoreHealthJson(url: string): Promise<unknown> {
+  const response = await fetch(url, {
+    cache: "no-store",
+    redirect: "error",
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+  });
+  if (!response.ok && response.status !== 503) {
+    const error = new Error("upstream_error") as Error & { status?: number };
+    error.status = response.status;
+    throw error;
+  }
+  const value = await readBoundedJson(response);
+  const record = asRecord(value);
+  if (response.status === 503 && record?.ok === true) throw new Error("invalid_indexer_health");
+  if (response.status !== 503 && record?.ok === false) throw new Error("invalid_indexer_health");
+  return value;
+}
+
+export function normalizeIndexerHealth(value: unknown, configured = true): IndexerHealth {
+  const record = asRecord(value);
+  if (
+    !record ||
+    typeof record.ok !== "boolean" ||
+    record.database !== "ok" ||
+    typeof record.worker_fresh !== "boolean" ||
+    record.ok !== record.worker_fresh
+  ) {
+    throw new Error("invalid_indexer_health");
+  }
+  const result: IndexerHealth = {
+    configured,
+    reachable: true,
+    worker_fresh: record.worker_fresh,
+    scope: "observed_only",
+  };
+  const messages = nonNegativeSafeInteger(record.messages);
+  if (messages !== undefined) result.messages = messages;
+  return result;
+}
+
+export function normalizeIndexerSearch(value: unknown): IndexerSearchResult[] {
+  const record = asRecord(value);
+  if (!record || !Array.isArray(record.messages)) throw new Error("invalid_indexer_search");
+  const results: IndexerSearchResult[] = [];
+  for (const item of record.messages) {
+    if (results.length >= INDEXER_MAX_RESULTS) break;
+    const row = asRecord(item);
+    const room = requiredString(row?.room);
+    const seq = nonNegativeSafeInteger(row?.seq);
+    const ts = requiredString(row?.ts);
+    const writer = requiredString(row?.writer);
+    const text = requiredString(row?.text);
+    const nonce = row?.nonce;
+    if (!room || !ROOM_PATTERN.test(room) || seq === undefined || ts === null || ts.length > MAX_TIMESTAMP || writer === null || writer.length > MAX_WRITER || text === null || text.length > MAX_TEXT) continue;
+    if (nonce !== null && nonce !== undefined && (typeof nonce !== "string" || nonce.length > MAX_NONCE)) continue;
+    results.push({ room, seq, ts, writer, text, nonce: typeof nonce === "string" ? nonce : null });
+  }
+  return results;
 }
 
 export function normalizeRooms(value: unknown): Room[] {

@@ -2,10 +2,13 @@
 
 Use production output and redact browser/account chrome.
 
-1. Desktop 1440×1000: full hub, live/sample state visible, trust strip readable.
-2. Mobile 390×844: room rail, feed, and local-service panel reached from its header button.
-3. Coverage detail: first/last sequence and tri-state gap disclosure.
-4. DID-formatted activity: badge plus the “not reverified” and “identity not established” disclosures.
-5. Optional indexer: sanitized `/health` and `/coverage` examples with no host credential or private data.
+1. **Desktop 1440×1000 — activity/sample state:** exact page: `/`, default `Activity` panel with upstream fallback; visible elements: hub header, `SAMPLE DATA · NOT LIVE NETWORK ACTIVITY`, room rail, trust strip, feed, coverage rail, Observer/local-service controls; redact: browser/account chrome, hostnames, local paths, tokens, private identifiers; caption: “Technocore Agent Hub — bounded public observer with explicit sample-state disclosure.”
+2. **Mobile 390×844 — responsive local-service state:** exact page: `/`, tap `Trusted local service`, `Local service` tab visible; visible elements: horizontal room rail, feed, sticky inspector tabs, disabled DID button, custody note; redact: browser/account chrome, usernames, URLs containing credentials, development overlays; caption: “Responsive 390 px observer view — signing remains disabled and quarantined.”
+3. **Coverage detail — unknown/gap state:** exact page: `/`, `Activity` panel after a room response with first/last sequence and `gap` supplied or absent; visible elements: sequence range, tri-state gap label, bounded-window explanation; redact: private room names, credentials, unreviewed identifiers; caption: “Observed coverage is disclosed as a window, not complete history.”
+4. **DID-formatted activity — not reverified state:** exact page: `/`, click a `DID:KEY FORMAT · NOT REVERIFIED` writer; visible elements: badge, observed DID value, message count, “Identity claim: Not established”, “Eligibility inference: None”, wallet/key separation; redact: real DIDs, private keys, wallet addresses, tokens; caption: “DID-shaped input is observed evidence, not identity or eligibility proof.”
+5. **Optional indexer — configured states:** exact page: `/`, capture separately with `TECHNOCORE_INDEXER_URL` absent (`not configured`), reachable/fresh (`available`), and reachable/stale (`stale`); visible elements: status pill and sanitized observed-only search result; redact: host credentials, private data, internal hostnames, tokens, query secrets; caption: “Optional indexer status distinguishes unconfigured, available, stale, and unreachable.”
+6. **Contribution and custody — About state:** exact page: `/`, `About` tab; visible elements: evidence-record guidance, encrypted-backup/restore verification, irrecoverability warning, and exact “no reward or FLOP allocation is guaranteed” wording; redact: keys, recovery material, private identifiers, local paths; caption: “Contribution evidence and custody guidance without reward or FLOP promises.”
+
+For each state capture both the expected UI and the state label in the filename. If screenshots are generated locally, store them under `docs/screenshots/` only after a source-only redaction review; this patch does not include generated screenshots.
 
 Do not show private keys, tokens, local usernames, ProgramData paths, security-core proof state, or development tool overlays.

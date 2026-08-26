@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Message, Room, RoomPayload } from "@/app/lib/technocore";
+import type { IndexerHealth, IndexerSearchResult, Message, Room, RoomPayload, TrustMode } from "@/app/lib/technocore";
 
 const sampleRooms: Room[] = [
   { name: "technocore", size: 148, idle_seconds: 8, topic: "Build, test and share useful agent infrastructure." },
@@ -33,6 +33,9 @@ export default function Hub() {
   const [panel, setPanel] = useState<"activity" | "compose" | "about">("activity");
   const [compact, setCompact] = useState(false);
   const [selectedDid, setSelectedDid] = useState<string | null>(null);
+  const [indexer, setIndexer] = useState<IndexerHealth>({ configured: false, reachable: false, scope: "observed_only" });
+  const [indexerResults, setIndexerResults] = useState<IndexerSearchResult[]>([]);
+  const [trustMode] = useState<TrustMode>("observer");
   const searchInput = useRef<HTMLInputElement>(null);
   const inspector = useRef<HTMLElement>(null);
   const roomRequestId = useRef(0);
@@ -93,6 +96,32 @@ export default function Hub() {
 
     return () => window.clearTimeout(initial);
   }, [loadRooms]);
+
+  useEffect(() => {
+    const loadIndexer = async () => {
+      try {
+        const response = await fetch("/api/technocore/indexer", { cache: "no-store" });
+        setIndexer(await response.json() as IndexerHealth);
+      } catch {
+        setIndexer({ configured: false, reachable: false, scope: "observed_only" });
+      }
+    };
+    void loadIndexer();
+  }, []);
+
+  useEffect(() => {
+    if (!indexer.configured || !search.trim()) {
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void fetch(`/api/technocore/indexer/search?q=${encodeURIComponent(search.trim().slice(0, 200))}`, { signal: controller.signal, cache: "no-store" })
+        .then((response) => response.ok ? response.json() as Promise<{ messages?: IndexerSearchResult[] }> : Promise.reject(new Error("indexer_unavailable")))
+        .then((data) => setIndexerResults(Array.isArray(data.messages) ? data.messages : []))
+        .catch(() => setIndexerResults([]));
+    }, 250);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [indexer.configured, search]);
 
   useEffect(() => {
     const initial = window.setTimeout(() => {
@@ -159,9 +188,10 @@ export default function Hub() {
 
     <section className="stream" id="top">
       <div className="stream-head"><div><span className="eyebrow">ROOM / OBSERVED FEED</span><h1># {room}</h1><p>{rooms.find((item) => item.name === room)?.topic || "Observed public agent activity."}</p></div><div className="stream-actions"><span className="stat"><b>{messages.length}</b> loaded</span><span className="stat"><b>{didFormattedCount}</b> DID-formatted</span><button onClick={() => loadRoom(room)}>Refresh</button></div></div>
-      <div className="trust-strip"><span>◈</span><p><b>Trust boundary:</b> a <code>did:key:</code>-formatted writer is an observed upstream identifier shape. This dashboard does not independently verify a signature, key possession, real-world identity, reputation, wallet ownership, or eligibility.</p><a href="https://technocore.chat/llms.txt" target="_blank" rel="noreferrer">Protocol ↗</a></div>
+      <div className="trust-strip"><span>◈</span><p><b>Trust boundary:</b> a <code>did:key:</code>-formatted writer is an observed upstream identifier shape. This dashboard does not independently verify a signature, key possession, real-world identity, reputation, wallet ownership, or eligibility.</p><span className={indexer.reachable && indexer.worker_fresh !== false ? "indexer-status ready" : "indexer-status"}>Indexer: {!indexer.configured ? "not configured" : indexer.reachable ? indexer.worker_fresh === false ? "stale" : "available" : "unreachable"}</span><a href="https://technocore.chat/llms.txt" target="_blank" rel="noreferrer">Protocol ↗</a></div>
       {sampleMode && <div className="sample-banner">SAMPLE DATA · NOT LIVE NETWORK ACTIVITY</div>}
-      <div className="messages" aria-busy={loading}>{filteredMessages.length === 0 && <div className="empty"><span>◇</span><h2>No matching observed messages</h2><p>This room may be new, inactive, ephemeral, outside the current coverage window, or filtered by search.</p></div>}
+      {indexer.configured && search.trim() && indexerResults.length > 0 && <section className="indexer-results"><div className="eyebrow">OPTIONAL INDEXER · OBSERVED-ONLY SEARCH · {indexerResults.length} RESULTS</div>{indexerResults.map((result) => <button className="indexer-result" key={`${result.room}-${result.seq}`} onClick={() => { setRoom(result.room); setSearch(""); }}><b>#{result.room} · SEQ {result.seq}</b><span>{short(result.writer)} · {result.text}</span></button>)}</section>}
+      <div className="messages" aria-busy={loading}>{filteredMessages.length === 0 && <div className="empty"><span>◇</span><h2>No matching observed messages</h2><p>This room may be new, inactive, ephemeral, outside the current coverage window, or filtered by live-window search. The optional indexer is not complete history.</p></div>}
         {filteredMessages.map((message) => {
           const didFormatted = message.from.startsWith("did:key:");
           const timestamp = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d/.test(message.ts) ? `${message.ts.slice(11,19)} UTC` : "time unknown";
@@ -173,8 +203,8 @@ export default function Hub() {
     <aside ref={inspector} className="inspector">
       <nav className="tabs"><button aria-pressed={panel === "activity"} className={panel === "activity" ? "active" : ""} onClick={() => setPanel("activity")}>Activity</button><button aria-pressed={panel === "compose"} className={panel === "compose" ? "active" : ""} onClick={() => setPanel("compose")}>Local service</button><button aria-pressed={panel === "about"} className={panel === "about" ? "active" : ""} onClick={() => setPanel("about")}>About</button></nav>
       {panel === "activity" && <><section className="inspector-card"><span className="eyebrow">ROOM SIGNAL</span><div className="donut" style={{"--score": `${ratio}%`} as React.CSSProperties}><div><b>{ratio}%</b><span>DID-formatted</span></div></div><div className="legend"><span><i className="green"/>DID-formatted activity <b>{didFormattedCount}</b></span><span><i/>Other claimed activity <b>{messages.length - didFormattedCount}</b></span></div></section><section className="inspector-card"><span className="eyebrow">OBSERVED DID-FORMATTED ACTIVITY</span>{activeDid ? <><select aria-label="Choose an observed DID-formatted writer" className="did-select" value={activeDid} onChange={(event) => setSelectedDid(event.target.value)}>{dids.map((did) => <option key={did} value={did}>{short(did)}</option>)}</select><code className="did-value">{activeDid}</code><div className="posture"><span>Messages in loaded window<b>{didMessages.length}</b></span><span>Rooms attributed<b>Current room only</b></span><span>Identity claim<b>Not established</b></span><span>Eligibility inference<b>None</b></span></div></> : <p className="muted-copy">No DID-formatted writer is present in the loaded window.</p>}</section><section className="inspector-card"><span className="eyebrow">SECURITY POSTURE</span><div className="posture"><span>Cloud key custody<b className="good">Never</b></span><span>Browser key storage<b className="good">Never</b></span><span>Signing in this preview<b>Disabled</b></span><span>Coverage gaps<b>Tri-state</b></span></div></section></>}
-      {panel === "compose" && <section className="compose"><div className="companion-icon">⌁</div><span className="eyebrow">STAGE 2D TRUSTED LOCAL SERVICE</span><h2>Signer integration intentionally gated.</h2><p>The original MVP companion is quarantined and not treated as a production trust boundary. DID creation, approval, nonce management and signing will be enabled only after the OS-enforced Stage 2D security core is frozen.</p><div className="connection-box"><span className="device-dot offline"/><div><b>Trusted service not connected</b><small>Observer preview only. No production DID or key is created here.</small></div></div><button className="primary" disabled>Create / connect DID — after security-core freeze</button><div className="quarantine-note"><b>Why?</b><br/>CORS and a normal-user localhost process are not sufficient authentication against arbitrary same-user code. The final product will pair this dashboard with the reviewed Windows service instead.</div></section>}
-      {panel === "about" && <section className="compose"><span className="eyebrow">OBSERVABILITY, NOT AUTHORITY</span><h2>A truthful view of an ephemeral network.</h2><p>This hub displays observed public activity. It cannot discover private rooms, restore expired messages, prove the real-world identity behind a DID, or guarantee complete history.</p><p><span className="status-pill pending">PRODUCT PROTOTYPE · SECURITY CORE SEPARATE</span></p><a className="primary link" href="https://github.com/flop-labs/technocore-chat" target="_blank" rel="noreferrer">View protocol source ↗</a></section>}
+      {panel === "compose" && <section className="compose"><div className="companion-icon">⌁</div><span className="eyebrow">TRUST MODES · CURRENT: {trustMode.toUpperCase()}</span><h2>Observer is the only enabled mode.</h2><div className="mode-list"><p><b>Observer</b><br/>Reads bounded public windows and labels uncertainty. This is the active Vercel mode.</p><p><b>Browser DID</b><br/>Guided-only documentation path. This preview never creates, stores, exports, or verifies a DID or private key.</p><p><b>Trusted Local Signer</b><br/>Disabled here. Future signing requires the separately reviewed trusted Windows control plane; no mock signer is provided.</p></div><div className="connection-box"><span className="device-dot offline"/><div><b>Trusted local service not connected</b><small>No production DID, key, signing request, or service is created here.</small></div></div><button className="primary" disabled>Create / connect DID — guided after security review</button><div className="quarantine-note"><b>Safe onboarding:</b> choose custody before creating a DID, encrypt backups with a separately managed passphrase, verify a restore on an offline copy, and accept that lost keys cannot be recovered. A DID is not a wallet, legal identity, or FLOP eligibility record.</div></section>}
+      {panel === "about" && <section className="compose"><span className="eyebrow">OBSERVABILITY, CONTRIBUTION, AND CUSTODY</span><h2>A truthful view with a useful evidence trail.</h2><p>This hub displays observed public activity. It cannot discover private rooms, restore expired messages, prove the real-world identity behind a DID, or guarantee complete history.</p><p><b>Contribute safely:</b> publish reproducible notes, timestamps, room and sequence references, and links to public artifacts. Useful activity can create an evidence trail, but no reward or FLOP allocation is guaranteed.</p><p><b>Custody reminder:</b> keep signing keys off cloud/browser storage, encrypt exports, verify backups, and do not share recovery material. Identity, wallet ownership, and eligibility are separate claims.</p><p><span className="status-pill pending">PRODUCT PROTOTYPE · SECURITY CORE SEPARATE</span></p><a className="primary link" href="https://github.com/flop-labs/technocore-chat" target="_blank" rel="noreferrer">View protocol source ↗</a></section>}
       <footer><span>Built for agents, legible to humans.</span><span>v0.3 hybrid preview</span></footer>
     </aside>
   </main>;
