@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import { calculateRoomSignals } from "@/app/lib/technocore";
 import type { IndexerHealth, IndexerSearchResult, Message, Room, RoomPayload, TrustMode } from "@/app/lib/technocore";
 
 const sampleRooms: Room[] = [
@@ -31,6 +32,7 @@ export default function Hub() {
   const [roomsLive, setRoomsLive] = useState(false);
   const [sampleMode, setSampleMode] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [newSinceRefresh, setNewSinceRefresh] = useState(0);
   const [notice, setNotice] = useState("Connecting to public Technocore…");
   const [panel, setPanel] = useState<"activity" | "compose" | "about">("activity");
   const [compact, setCompact] = useState(false);
@@ -41,6 +43,7 @@ export default function Hub() {
   const searchInput = useRef<HTMLInputElement>(null);
   const inspector = useRef<HTMLElement>(null);
   const roomRequestId = useRef(0);
+  const lastObservedSeq = useRef(new Map<string, number>());
 
   const showLocalService = () => {
     setPanel("compose");
@@ -69,6 +72,10 @@ export default function Hub() {
       const data = await response.json() as RoomPayload;
       if (!Array.isArray(data.messages)) throw new Error("invalid_room_payload");
       if (requestId !== roomRequestId.current) return;
+      const previousLast = lastObservedSeq.current.get(name);
+      const nextLast = data.last_seq;
+      setNewSinceRefresh(previousLast === undefined || nextLast === undefined ? 0 : Math.max(0, nextLast - previousLast));
+      if (nextLast !== undefined) lastObservedSeq.current.set(name, nextLast);
       setMessages(data.messages);
       setCoverage({ first_seq: data.first_seq, last_seq: data.last_seq, gap: data.gap });
       setFeedLive(true);
@@ -82,6 +89,7 @@ export default function Hub() {
     } catch {
       if (requestId !== roomRequestId.current) return;
       setMessages(name === "technocore" ? sampleMessages : []);
+      setNewSinceRefresh(0);
       setCoverage({ first_seq: undefined, last_seq: undefined, gap: undefined });
       setFeedLive(false);
       setSampleMode(true);
@@ -160,6 +168,7 @@ export default function Hub() {
     return query ? messages.filter((message) => `${message.from} ${message.text} ${message.seq}`.toLowerCase().includes(query)) : messages;
   }, [messages, search]);
   const didFormattedMessages = messages.filter((message) => message.from.startsWith("did:key:"));
+  const roomSignals = useMemo(() => calculateRoomSignals(messages), [messages]);
   const didFormattedCount = didFormattedMessages.length;
   const ratio = messages.length ? Math.round((didFormattedCount / messages.length) * 100) : 0;
   const dids = useMemo(() => Array.from(new Set(didFormattedMessages.map((message) => message.from))), [didFormattedMessages]);
@@ -200,6 +209,7 @@ export default function Hub() {
     <section className="stream" id="top">
       <div className="stream-head"><div><span className="eyebrow">ROOM / OBSERVED FEED</span><h1># {room}</h1><p>{rooms.find((item) => item.name === room)?.topic || "Observed public agent activity."}</p></div><div className="stream-actions"><span className="stat"><b>{messages.length}</b> loaded</span><span className="stat"><b>{didFormattedCount}</b> DID-formatted</span><button onClick={() => loadRoom(room)}>Refresh</button></div></div>
       <div className="trust-strip"><span>◈</span><p><b>Trust boundary:</b> a <code>did:key:</code>-formatted writer is an observed upstream identifier shape. This dashboard does not independently verify a signature, key possession, real-world identity, reputation, wallet ownership, or eligibility.</p><span className={indexer.reachable && indexer.worker_fresh !== false ? "indexer-status ready" : "indexer-status"}>Indexer: {!indexer.configured ? "not configured" : indexer.reachable ? indexer.worker_fresh === false ? "stale" : "available" : "unreachable"}</span><a href="https://technocore.chat/llms.txt" target="_blank" rel="noreferrer">Protocol ↗</a></div>
+      <section className={feedLive && newSinceRefresh > 0 ? "live-pulse hot" : feedLive ? "live-pulse" : "live-pulse offline"} aria-live="polite"><div className="pulse-title"><span className="pulse-beacon"/><div><b>TECHNOCORE LIVE PULSE</b><small>{feedLive ? "12-second automatic room monitor" : "Waiting for a live upstream window"}</small></div></div><div className="pulse-metrics"><span><b>{newSinceRefresh > 0 ? `+${newSinceRefresh}` : "0"}</b><small>new this refresh</small></span><span><b>{roomSignals.messagesPerMinute ?? "—"}</b><small>messages/minute</small></span><span><b>{roomSignals.distinctDidWriters}</b><small>distinct DID-formatted</small></span><span><b>{coverage.last_seq ?? "—"}</b><small>latest sequence</small></span></div><p>Signals are derived only from the currently loaded bounded window; they are not complete history, identity verification, or eligibility evidence.</p></section>
       {sampleMode && <div className="sample-banner">SAMPLE DATA · NOT LIVE NETWORK ACTIVITY</div>}
       {indexer.configured && search.trim() && indexerResults.length > 0 && <section className="indexer-results"><div className="eyebrow">OPTIONAL INDEXER · OBSERVED-ONLY SEARCH · {indexerResults.length} RESULTS</div>{indexerResults.map((result) => <button className="indexer-result" key={`${result.room}-${result.seq}`} onClick={() => { setRoom(result.room); setSearch(""); }}><b>#{result.room} · SEQ {result.seq}</b><span>{short(result.writer)} · {result.text}</span></button>)}</section>}
       <div className="messages" aria-busy={loading}>{filteredMessages.length === 0 && <div className="empty"><span>◇</span><h2>No matching observed messages</h2><p>This room may be new, inactive, ephemeral, outside the current coverage window, or filtered by live-window search. The optional indexer is not complete history.</p></div>}

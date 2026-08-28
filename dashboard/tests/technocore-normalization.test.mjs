@@ -4,7 +4,7 @@ import fs from "node:fs";
 
 const source = fs.readFileSync(new URL("../app/lib/technocore.ts", import.meta.url), "utf8");
 const hub = fs.readFileSync(new URL("../app/ui/hub.tsx", import.meta.url), "utf8");
-const { fetchTechnocoreHealthJson, fetchTechnocoreJson, normalizeIndexerHealth, normalizeIndexerSearch, normalizeIndexerUrl, normalizeRoomPayload, normalizeRooms, normalizeTrustMode } = await import(
+const { calculateRoomSignals, fetchTechnocoreHealthJson, fetchTechnocoreJson, normalizeIndexerHealth, normalizeIndexerSearch, normalizeIndexerUrl, normalizeRoomPayload, normalizeRooms, normalizeTrustMode } = await import(
   new URL("../app/lib/technocore.ts", import.meta.url)
 );
 
@@ -32,6 +32,24 @@ test("observer refreshes the selected room and opens only exact bounded room nam
   assert.match(hub, /OPEN EXACT ROOM OR MAILBOX/);
   assert.match(hub, /This does not discover unlisted rooms/);
   assert.match(hub, /proves no privacy, ownership, identity, or legitimacy/);
+});
+
+test("live pulse derives bounded room signals without inventing history", () => {
+  const signals = calculateRoomSignals([
+    { seq: 1, ts: "2026-08-28T10:00:00Z", from: "did:key:one", text: "a" },
+    { seq: 2, ts: "2026-08-28T10:00:30Z", from: "~claim", text: "b" },
+    { seq: 3, ts: "2026-08-28T10:01:00Z", from: "did:key:one", text: "c" },
+    { seq: 4, ts: "2026-08-28T10:01:30Z", from: "did:key:two", text: "d" },
+  ]);
+  assert.deepEqual(signals, { messagesPerMinute: 2, distinctDidWriters: 2, spanSeconds: 90 });
+  assert.deepEqual(calculateRoomSignals([]), { messagesPerMinute: null, distinctDidWriters: 0, spanSeconds: null });
+  assert.equal(calculateRoomSignals([
+    { seq: 1, ts: "2026-08-28T10:00:00Z", from: "~a", text: "a" },
+    { seq: 2, ts: "2026-08-28T10:00:00Z", from: "~b", text: "b" },
+  ]).messagesPerMinute, null);
+  assert.match(hub, /TECHNOCORE LIVE PULSE/);
+  assert.match(hub, /Signals are derived only from the currently loaded bounded window/);
+  assert.match(hub, /Math\.max\(0, nextLast - previousLast\)/);
 });
 
 test("normalization accepts only non-negative safe integer metrics", () => {

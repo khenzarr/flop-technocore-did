@@ -46,6 +46,36 @@ export type RoomPayload = {
   gap?: boolean;
 };
 
+export type RoomSignals = {
+  messagesPerMinute: number | null;
+  distinctDidWriters: number;
+  spanSeconds: number | null;
+};
+
+export function calculateRoomSignals(messages: Message[]): RoomSignals {
+  const distinctDidWriters = new Set(
+    messages.filter((message) => message.from.startsWith("did:key:")).map((message) => message.from),
+  ).size;
+  const timestamps = messages
+    .map((message) => Date.parse(message.ts))
+    .filter((value) => Number.isFinite(value));
+  if (timestamps.length < 2) {
+    return { messagesPerMinute: null, distinctDidWriters, spanSeconds: null };
+  }
+  const first = Math.min(...timestamps);
+  const last = Math.max(...timestamps);
+  if (last <= first) {
+    return { messagesPerMinute: null, distinctDidWriters, spanSeconds: null };
+  }
+  const spanMilliseconds = last - first;
+  const spanSeconds = Math.max(1, Math.round(spanMilliseconds / 1000));
+  const messagesPerMinute = Math.min(
+    999,
+    Math.round((((timestamps.length - 1) * 60000) / spanMilliseconds) * 10) / 10,
+  );
+  return { messagesPerMinute, distinctDidWriters, spanSeconds };
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
