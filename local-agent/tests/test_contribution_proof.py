@@ -20,7 +20,7 @@ def _key():
     return Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
 
 
-def test_proof_is_zun_compatible_deterministic_and_self_verifying():
+def test_proof_is_deterministic_and_self_verifying():
     key = _key()
     did = canonical_did(key)
     repository = "https://github.com/khenzarr/flop-technocore-did"

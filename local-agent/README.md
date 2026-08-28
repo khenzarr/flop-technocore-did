@@ -82,7 +82,7 @@ For a public Git-based contribution, the dashboard can sign one immutable 40- or
 revision using the same local DID. Enter the public HTTPS repository URL, the full commit hash, and
 a fresh operator passphrase. The trusted process creates a
 `technocore-contribution-proof-v1` JSON file in Downloads, verifies it with the public DID, and
-never exposes the private key. The format is compatible with the Zun Technocore DID starter.
+never exposes the private key. The proof uses a deterministic, self-verifying public schema.
 
 Anyone can verify the public file without your private key:
 

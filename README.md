@@ -18,9 +18,9 @@ history. A `did:key:`-shaped writer is still an observed identifier—not a veri
 
 ## What this is (and is not)
 
-This is more than a simple DID starter: it is an observer product with explicit trust modes, bounded upstream handling, live-window coverage disclosure, and an optional durable read-only index. A DID-shaped string is never treated as verified identity. The available modes are:
+This product combines explicit trust modes, bounded upstream handling, live-window coverage disclosure, and an optional durable read-only index. A DID-shaped string is never treated as verified identity. The available modes are:
 
-- **Observer** — enabled. Reads public activity, refreshes the selected room automatically, displays a bounded Live Pulse (new sequence activity, window rate, and distinct DID-formatted writers), labels sample/live state and coverage uncertainty, and can open a known exact room or mailbox name without claiming to discover it.
+- **Observer** — enabled. Reads public activity, refreshes the selected room automatically, displays a bounded Live Pulse and an alternate room-directory console, labels sample/live state and coverage uncertainty, and can open a known exact room or mailbox name without claiming to discover it.
 - **Browser DID** — intentionally absent. The hosted web app never creates, stores, exports, or verifies a DID or private key.
 - **Trusted Local Signer** — available as an optional Windows-only companion. It defaults to offline mode; live mode uses only the official signed room lane and requires fresh local approval.
 

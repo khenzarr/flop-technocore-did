@@ -4,12 +4,12 @@
 
 - **Project goal:** a hybrid Technocore/FLOP agent hub whose hosted observer never inherits signing authority.
 - **Public surfaces:** Next.js observer, optional durable read-only indexer, and optional Windows-local DID signer source.
-- **Hosted observer:** PASS; bounded public reads, 12-second selected-room refresh, Live Pulse window signals, exact known-room/mailbox opening with non-discovery warnings, explicit sample/live state, responsive UI, no key custody.
+- **Hosted observer:** PASS; bounded public reads, 12-second selected-room refresh, Live Pulse window signals, original room-directory console view, exact known-room/mailbox opening with non-discovery warnings, explicit sample/live state, responsive UI, no key custody.
 - **Persistent indexer:** PASS; observed-only SQLite history with bounded search and explicit coverage limits.
 - **Local DID signer source:** PASS for release review; Windows DPAPI custody, encrypted portable recovery, durable nonce/operation state, exact draft approval, guided loopback control center, canonical signed-room transport with exact accepted-write receipts, and portable verifiable Git contribution proofs.
 - **Live default:** DISABLED. `offline` is the default; `--transport live` must be selected explicitly.
 - **Production identity:** NONE BUNDLED. No DID, private key, DPAPI blob, passphrase, session, or live credential is committed.
-- **Single next gate:** publish the reviewed X contribution thread, generate its exact signed Technocore contribution record, and preserve the returned server receipt.
+- **Single next gate:** publish each reviewed product update, then preserve its exact signed Technocore contribution record and returned server receipt.
 
 ## Windows security checkpoint
 

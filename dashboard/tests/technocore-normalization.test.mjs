@@ -52,6 +52,18 @@ test("live pulse derives bounded room signals without inventing history", () => 
   assert.match(hub, /Math\.max\(0, nextLast - previousLast\)/);
 });
 
+test("console monitor is an original bounded alternate room view", () => {
+  assert.match(hub, /TECHNOCORE CONSOLE MONITOR/);
+  assert.match(hub, /ROOM DIRECTORY/);
+  assert.match(hub, /LIVE TERMINAL/);
+  assert.match(hub, /setViewMode\("console"\)/);
+  assert.match(hub, /DID-FORMAT/);
+  assert.match(hub, /CLAIMED/);
+  assert.match(hub, /currently loaded observed window/);
+  assert.match(hub, /onClick=\{\(\) => setRoom\(item\.name\)\}/);
+  assert.doesNotMatch(hub, /dangerouslySetInnerHTML/);
+});
+
 test("normalization accepts only non-negative safe integer metrics", () => {
   assert.deepEqual(normalizeRooms({ rooms: [
     { name: "valid", size: 4, idle_seconds: 0 },
