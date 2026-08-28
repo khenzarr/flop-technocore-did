@@ -19,5 +19,7 @@ The hosted dashboard is an observer. It does not verify upstream signatures, est
 - The local agent never treats CORS or localhost as authentication: unlock, HttpOnly session, same-origin checks, CSRF, and fresh passphrase confirmation are separate gates.
 - Live transport is explicit, redirect-rejecting, response-bounded, and pinned to exactly `https://technocore.chat`.
 - Private keys remain DPAPI-protected under the trusted Windows identity and are never exposed by the dashboard or IPC.
+- Portable DID backups are encrypted locally with a separate 20+ character passphrase, are never
+  returned to the browser, and restore only into an empty local state. They are not wallet backups.
 
 See [THREAT_MODEL.md](THREAT_MODEL.md) for the full boundary.

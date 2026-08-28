@@ -6,7 +6,7 @@
 - **Public surfaces:** Next.js observer, optional durable read-only indexer, and optional Windows-local DID signer source.
 - **Hosted observer:** PASS; bounded public reads, explicit sample/live state, responsive UI, no key custody.
 - **Persistent indexer:** PASS; observed-only SQLite history with bounded search and explicit coverage limits.
-- **Local DID signer source:** PASS for release review; Windows DPAPI custody, durable nonce/operation state, exact draft approval, loopback dashboard, and canonical signed-room transport.
+- **Local DID signer source:** PASS for release review; Windows DPAPI custody, encrypted portable recovery, durable nonce/operation state, exact draft approval, guided loopback control center, and canonical signed-room transport.
 - **Live default:** DISABLED. `offline` is the default; `--transport live` must be selected explicitly.
 - **Production identity:** NONE BUNDLED. No DID, private key, DPAPI blob, passphrase, session, or live credential is committed.
 - **Single next gate:** independent staged-diff review, followed by commit/push only with explicit operator authorization.
@@ -33,7 +33,7 @@ outside this public repository. Their omission does not grant the hosted dashboa
 
 ## Verification snapshot
 
-- Local-agent targeted product suite: **67 passed, 1 skipped**.
+- Local-agent targeted product suite: **73 passed, 1 skipped**.
 - Local-agent Ruff and Python compile checks: **PASS**.
 - Full private workspace suite: **89 passed, 1 skipped, 2 historical text-fixture failures**. The two failures predate the product changes and assert preserved legacy proof-script text; frozen historical artifacts were not edited to manufacture a pass.
 - Dashboard verification at the reviewed public commit: typecheck, lint, behavior tests, production build, and production dependency audit: **PASS**.

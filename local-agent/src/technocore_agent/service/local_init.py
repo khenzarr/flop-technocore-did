@@ -80,7 +80,10 @@ def _current_user_sid() -> str:
         ):
             raise ctypes.WinError(ctypes.get_last_error())
         try:
-            return string_sid.value
+            value = string_sid.value
+            if value is None:
+                raise RuntimeError("Windows returned an empty user SID")
+            return value
         finally:
             kernel32.LocalFree(string_sid)
     finally:

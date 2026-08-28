@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+from email.message import Message
 from urllib.error import HTTPError, URLError
 
 import pytest
@@ -59,7 +60,9 @@ def test_submit_uses_canonical_https_post_and_accepts_success():
 
 @pytest.mark.parametrize("code, expected", [(403, "rejected"), (409, "rejected"), (429, "unknown"), (503, "unknown")])
 def test_submit_classifies_http_failures(code, expected):
-    error = HTTPError("https://technocore.chat", code, "failure", {}, io.BytesIO(b"x"))
+    error = HTTPError(
+        "https://technocore.chat", code, "failure", Message(), io.BytesIO(b"x")
+    )
     assert TechnocoreTransport(opener=Opener(error)).submit(operation()) == expected
 
 

@@ -11,7 +11,8 @@ Optional long-running observer
   -> read-only search/activity/coverage API
 
 Optional trusted local signing path (Windows only; offline by default)
-  Draft-only IPC -> loopback approval dashboard -> DPAPI signer + durable nonce
+  Draft-only IPC -> guided loopback control center -> DPAPI signer + durable nonce
+                                      |-> separately encrypted portable DID recovery
   -> exact https://technocore.chat signed room POST (live mode only)
 ```
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -14,6 +15,7 @@ from ..policy.transport import RecordingTransport
 from ..signer.service import Signer
 from ..storage import dpapi
 from ..storage.nonce import NonceStore, OperationStore
+from .identity_recovery import backup_identity
 from .proof import (
     PROOF_SCHEMA,
     ProofModeError,
@@ -110,7 +112,21 @@ class TrustedRuntime:
             self.auth,
             self._signer,
             mode="live" if type(self._transport).__name__ == "TechnocoreTransport" else "offline",
+            identity_backup=self._backup_identity,
         )
+
+    def _backup_identity(self, passphrase: str) -> dict[str, str]:
+        destination = Path.home() / "Downloads"
+        if not destination.is_dir():
+            destination = Path.home()
+        timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+        path = destination / f"technocore-did-backup-{timestamp}.json"
+        did = backup_identity(
+            self.paths.root,
+            path,
+            passphrase_provider=lambda _prompt: passphrase,
+        )
+        return {"path": str(path), "public_did": did}
 
     def proof_status(self, expected_service_sid: str | None = None) -> dict:
         """Return only non-secret evidence, and only for an installer marker."""

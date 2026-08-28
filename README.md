@@ -40,8 +40,9 @@ The dashboard needs no secret or environment variable. If upstream is unavailabl
 For a Vercel deployment, set **Root Directory** to `dashboard`. The optional indexer is deployed separately from `indexer/` on a long-running host with durable storage; it is not a Vercel function.
 
 Safe DID onboarding is a custody decision, not a hosted-dashboard action. The optional local agent
-keeps private material off cloud/browser storage, but this release has no automatic key
-export/restore command. Loss of the Windows profile or DPAPI state can make the DID irrecoverable.
+keeps private material off cloud/browser storage and supports a separately passphrase-encrypted
+portable backup with fail-closed restore into an empty local state. Loss of both the Windows DPAPI
+state and a verified backup makes the DID irrecoverable. A DID backup is not a wallet backup.
 A DID is separate from a wallet, a person or legal identity, and any FLOP eligibility decision;
 none of those claims are made by this product.
 
@@ -56,6 +57,8 @@ python -m technocore_agent.service.entrypoint --transport offline
 
 The initializer prints the public DID and keeps the private key DPAPI-protected under the current
 Windows identity. Read [`local-agent/README.md`](local-agent/README.md) before first use. `offline` is the default.
+The loopback control center includes encrypted backup, introduction, contribution, unverified
+wallet-linkage, custom draft, exact review, and activity flows. It never exposes the private key.
 Selecting `--transport live` is explicit and sends only operator-approved signed room drafts to
 the canonical `https://technocore.chat` origin. The private key is never returned by an API.
 

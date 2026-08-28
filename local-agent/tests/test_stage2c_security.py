@@ -230,3 +230,114 @@ def test_live_dashboard_discloses_only_public_did_and_requires_local_unlock(tmp_
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_unified_dashboard_creates_only_reviewable_operator_drafts(tmp_path):
+    drafts = DraftStore(tmp_path / "drafts.json")
+    auth = OperatorAuth(tmp_path / "operator.json")
+    auth.enroll(PASS)
+    control = ControlPlane(
+        drafts,
+        ApprovalStore(tmp_path / "approvals.json"),
+        auth,
+        _SignerStub(),
+        mode="offline",
+    )
+    server = create_server(control)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    url = f"http://127.0.0.1:{server.server_port}"
+    try:
+        _, headers, _ = _request(url, "/unlock", data={"passphrase": PASS}, origin=url)
+        cookie = SimpleCookie(headers["Set-Cookie"])
+        session_cookie = f"tc_session={cookie['tc_session'].value}"
+        session = auth.validate(cookie["tc_session"].value)
+        status, _, body = _request(url, "/", cookie=session_cookie)
+        assert status == 200
+        for label in (
+            "Encrypted DID backup",
+            "Join Technocore",
+            "Record a useful contribution",
+            "Optional wallet linkage declaration",
+            "Compose a signed room message",
+        ):
+            assert label in body
+
+        status, _, _ = _request(
+            url,
+            "/onboarding/contribution",
+            data={
+                "csrf": session.csrf_token,
+                "url": "https://example.com/useful-tool",
+                "summary": "new agents understand safe DID custody",
+            },
+            cookie=session_cookie,
+            origin=url,
+        )
+        assert status == 200
+        [draft] = drafts.list()
+        assert draft.status == "PENDING"
+        assert draft.room == "technocore"
+        assert "https://example.com/useful-tool" in draft.cleaned_text
+        assert not (tmp_path / "approvals.json").exists()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_wallet_linkage_is_explicitly_unverified_and_backup_never_returns_key(tmp_path):
+    drafts = DraftStore(tmp_path / "drafts.json")
+    auth = OperatorAuth(tmp_path / "operator.json")
+    auth.enroll(PASS)
+    backup_calls = []
+    control = ControlPlane(
+        drafts,
+        ApprovalStore(tmp_path / "approvals.json"),
+        auth,
+        _SignerStub(),
+        identity_backup=lambda password: backup_calls.append(password)
+        or {"path": str(tmp_path / "backup.json"), "public_did": _SignerStub.did},
+    )
+    server = create_server(control)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    url = f"http://127.0.0.1:{server.server_port}"
+    try:
+        _, headers, _ = _request(url, "/unlock", data={"passphrase": PASS}, origin=url)
+        cookie = SimpleCookie(headers["Set-Cookie"])
+        session_cookie = f"tc_session={cookie['tc_session'].value}"
+        session = auth.validate(cookie["tc_session"].value)
+        assert (
+            _request(
+                url,
+                "/onboarding/wallet-link",
+                data={"csrf": session.csrf_token, "chain": "Ethereum", "address": "0x1234567890abcdef"},
+                cookie=session_cookie,
+                origin=url,
+            )[0]
+            == 200
+        )
+        [draft] = drafts.list()
+        assert "self-asserted" in draft.cleaned_text
+        assert "wallet ownership and FLOP eligibility are not verified" in draft.cleaned_text
+
+        backup_password = "a separate browser backup passphrase"
+        status, _, body = _request(
+            url,
+            "/identity/backup",
+            data={
+                "csrf": session.csrf_token,
+                "backup_passphrase": backup_password,
+                "backup_confirmation": backup_password,
+            },
+            cookie=session_cookie,
+            origin=url,
+        )
+        assert status == 200 and "Encrypted backup created" in body
+        assert backup_calls == [backup_password]
+        assert backup_password not in body and "private_key" not in body
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)

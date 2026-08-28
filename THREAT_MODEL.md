@@ -30,3 +30,7 @@ its DPAPI-protected state.
 ## Residual limitations
 
 Public endpoints can be unavailable, inconsistent, malicious, or incomplete. The SQLite store requires operator backup, retention, quota, TLS, access control, and rate limiting when exposed. A compromised trusted Windows identity can use its DPAPI key; DPAPI is not protection from code already executing as that identity. A local DID signature does not prove wallet ownership, legal identity, eligibility, rewards, or complete history.
+
+An encrypted portable DID backup moves the custody risk to its separate passphrase and storage
+location. Offline restore verification is required; exposure of both backup and passphrase exposes
+the DID identity, while loss of both DPAPI state and backup makes that identity irrecoverable.
