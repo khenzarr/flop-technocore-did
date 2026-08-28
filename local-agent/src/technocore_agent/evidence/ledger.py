@@ -24,6 +24,8 @@ SAFE_FIELDS = frozenset(
         "text_length",
         "local_request_id",
         "reconciliation_status",
+        "server_sequence",
+        "server_timestamp",
     }
 )
 
@@ -49,6 +51,8 @@ class Ledger:
         reconciliation_status: str,
         text_hash: str | None = None,
         text_length: int | None = None,
+        server_sequence: int | None = None,
+        server_timestamp: str | None = None,
     ) -> dict:
         record = {
             "schema_version": 1,
@@ -67,6 +71,8 @@ class Ledger:
             "text_length": text_length if text_length is not None else len(text),
             "local_request_id": request_id,
             "reconciliation_status": reconciliation_status,
+            "server_sequence": server_sequence,
+            "server_timestamp": server_timestamp,
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._lock, self.path.open("a", encoding="utf-8") as stream:

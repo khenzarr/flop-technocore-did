@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from technocore_agent.control import ApprovalStore, DraftStore
 from technocore_agent.evidence.ledger import Ledger, LedgerError
 from technocore_agent.ipc.subprocess_broker import serve_once
-from technocore_agent.policy.transport import RecordingTransport
+from technocore_agent.policy.transport import RecordingTransport, SubmissionResult
 from technocore_agent.signer import Signer
 from technocore_agent.storage import dpapi
 from technocore_agent.storage.nonce import NonceError, NonceStore, OperationStore
@@ -118,6 +118,40 @@ def test_submission_outcomes_are_durable_and_idempotent(tmp_path, mode, state):
     assert second["nonce"] == first["nonce"] == 1
     assert restarted_outcomes.count("submitted") == 0
     assert outcomes.count("submitted") == submission_count
+
+
+def test_exact_server_receipt_is_committed_with_acceptance_and_evidence(tmp_path):
+    receipt: dict[str, object] = {
+        "room": "room",
+        "seq": 91,
+        "ts": "2026-08-28T12:52:29.000000+00:00",
+        "from": "did:key:z6MkReceiptTest",
+        "nonce": 1,
+        "text": "hello",
+    }
+
+    class ReceiptTransport:
+        def submit(self, _operation):
+            return SubmissionResult("accepted", receipt)
+
+    approvals = ApprovalStore(tmp_path / "approvals.json")
+    ledger = Ledger(tmp_path / "evidence.jsonl")
+    service = Signer(
+        _key(),
+        NonceStore(tmp_path / "nonces.json"),
+        OperationStore(tmp_path / "operations.json"),
+        ReceiptTransport(),
+        ledger,
+        approvals,
+    )
+    approval = _approval(tmp_path)
+    result = _execute(service, approval)
+    assert result["state"] == "ACCEPTED" and result["receipt"] == receipt
+    stored = OperationStore(tmp_path / "operations.json").get(approval.draft_id)
+    assert stored is not None and stored["receipt"] == receipt
+    evidence = ledger.read()[-1]
+    assert evidence["server_sequence"] == 91
+    assert evidence["server_timestamp"] == receipt["ts"]
 
 
 def test_request_id_conflict_matrix(tmp_path):

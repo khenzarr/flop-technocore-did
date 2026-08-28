@@ -290,7 +290,7 @@ class OperationStore:
             self._write(records)
             return record.copy()
 
-    def transition(self, request_id: str, state: str) -> dict:
+    def transition(self, request_id: str, state: str, **fields) -> dict:
         with self._lock, self._exclusive():
             records = self._read()
             try:
@@ -309,6 +309,13 @@ class OperationStore:
             }
             if state not in allowed.get(current, set()):
                 raise NonceError(f"invalid reconciliation transition: {current} -> {state}")
+            if set(fields) - {"receipt"}:
+                raise NonceError("unsupported operation transition field")
+            receipt = fields.get("receipt")
+            if receipt is not None:
+                if state not in {"ACCEPTED", "RECONCILED"} or not isinstance(receipt, dict):
+                    raise NonceError("receipt is invalid for this operation transition")
+                record["receipt"] = receipt
             record["state"] = state
             record["updated_at"] = time.time()
             self._write(records)

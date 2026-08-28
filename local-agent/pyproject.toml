@@ -1,6 +1,6 @@
 [project]
 name = "technocore-agent-local"
-version = "0.2.1"
+version = "0.2.2"
 description = "Windows-local, operator-approved Technocore DID signer"
 requires-python = ">=3.12"
 dependencies = ["cryptography==50.0.0"]

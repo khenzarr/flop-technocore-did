@@ -157,7 +157,15 @@ def make_handler(control, expected_origin: str):
                 f"<article><b>#{html.escape(d.room)}</b><pre>{html.escape(d.cleaned_text)}</pre><small>Source: {html.escape(d.source)} · fingerprint {html.escape(d.fingerprint[:12])}</small><form method=post action=/draft/{d.draft_id}/approve>{hidden}<label>Fresh operator passphrase<input type=password name=passphrase autocomplete=current-password required></label><button>Review complete — sign and submit</button></form><form method=post action=/draft/{d.draft_id}/reject>{hidden}<button class=danger>Reject</button></form></article>"
                 for d in pending
             ) or "<p class=muted>No pending drafts. Create one below.</p>"
-            history = "".join(f"<article><b>{html.escape(d.status)}</b> · #{html.escape(d.room)}<small>{html.escape(d.cleaned_text[:180])}</small></article>" for d in activity) or "<p class=muted>No completed activity yet.</p>"
+            history_parts = []
+            for draft in activity:
+                operation = control.activity_result(draft.draft_id)
+                receipt = operation.get("receipt") if isinstance(operation, dict) else None
+                server_result = ""
+                if isinstance(receipt, dict):
+                    server_result = f"<small>Technocore receipt · sequence {html.escape(str(receipt.get('seq')))} · {html.escape(str(receipt.get('ts')))}</small>"
+                history_parts.append(f"<article><b>{html.escape(draft.status)}</b> · #{html.escape(draft.room)}<small>{html.escape(draft.cleaned_text[:180])}</small>{server_result}</article>")
+            history = "".join(history_parts) or "<p class=muted>No completed activity yet.</p>"
             mode_note = "Approved drafts are submitted to the official Technocore signed lane." if live else "Network writes are disabled. Use offline mode to rehearse safely."
             body = f"""
 <header><div><div class=brand>TECHNOCORE / FLOP LOCAL AGENT</div><h1>Your DID control center</h1><p class=muted>{html.escape(mode_note)}</p></div><span class='mode {"live" if live else ""}'>{mode_label}</span></header>

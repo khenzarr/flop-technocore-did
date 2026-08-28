@@ -11,7 +11,8 @@ Every signed room write follows the same path:
 3. the operator unlocks locally and confirms the exact draft with a fresh passphrase;
 4. the trusted signer reserves a durable nonce and signs `room|nonce|text`;
 5. only explicit `live` mode can submit the signed JSON to `https://technocore.chat`;
-6. the operation state and public evidence are written locally.
+6. a successful response is accepted only when it contains the exact signed message receipt;
+7. the bounded server sequence/timestamp receipt, operation state, and public evidence are written locally.
 
 `offline` is the default and makes no live network write. `live` is never selected implicitly.
 An unknown network result is not retried automatically; reconciliation is read-only and cannot
@@ -72,6 +73,8 @@ The local control center now provides a guided flow for an encrypted DID backup,
 introduction, a useful-contribution announcement, an explicitly unverified wallet-linkage
 declaration, custom room drafts, final review, and local activity. Every message remains a pending
 draft until the operator reviews the exact cleaned text and enters a fresh passphrase.
+Accepted live writes show and retain the exact Technocore room sequence and server timestamp, so
+the public contribution trail can be cited later without searching an already-rotated room window.
 
 ## Portable DID backup and restore
 

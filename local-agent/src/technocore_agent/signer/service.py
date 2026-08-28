@@ -92,12 +92,14 @@ class Signer:
         self._operations.transition(request_id, "SIGNED")
         self._operations.transition(request_id, "SUBMISSION_STARTED")
         outcome = self._transport.submit(signed)
+        outcome_status = outcome.status if hasattr(outcome, "status") else outcome
+        receipt = outcome.receipt if hasattr(outcome, "receipt") else None
         state = {"accepted": "ACCEPTED", "rejected": "FAILED_FINAL", "unknown": "UNKNOWN"}.get(
-            outcome
+            outcome_status
         )
         if state is None:
             state = "FAILED_FINAL"
-        record = self._operations.transition(request_id, state)
+        record = self._operations.transition(request_id, state, receipt=receipt)
         self._append_evidence(record, room, cleaned)
         return record
 
@@ -108,13 +110,20 @@ class Signer:
         if record is None or record["state"] != "UNKNOWN":
             return record
         outcome = self._transport.reconcile(record)
-        if outcome == "accepted":
-            record = self._operations.transition(request_id, "RECONCILED")
-        elif outcome == "rejected":
+        outcome_status = outcome.status if hasattr(outcome, "status") else outcome
+        receipt = outcome.receipt if hasattr(outcome, "receipt") else None
+        if outcome_status == "accepted":
+            record = self._operations.transition(request_id, "RECONCILED", receipt=receipt)
+        elif outcome_status == "rejected":
             record = self._operations.transition(request_id, "FAILED_FINAL")
         if record is not None and record["state"] in {"RECONCILED", "FAILED_FINAL"}:
             self._append_evidence(record, record["lane"], "")
         return record
+
+    def operation_record(self, request_id: str) -> dict | None:
+        if self._operations is None:
+            return None
+        return self._operations.get(request_id)
 
     def _sign_with_nonce(self, room: str, text: str, nonce: int) -> SignedOperation:
         message = canonical_message(room, nonce, text)
@@ -127,6 +136,8 @@ class Signer:
             "RECONCILED",
             "FAILED_FINAL",
         }:
+            stored_receipt = record.get("receipt")
+            receipt: dict = stored_receipt if isinstance(stored_receipt, dict) else {}
             self._ledger.append(
                 public_did=self.did,
                 room=room,
@@ -136,6 +147,8 @@ class Signer:
                 request_id=record["request_id"],
                 reconciliation_status=record["state"].lower(),
                 text_hash=record["text_hash"],
+                server_sequence=receipt.get("seq"),
+                server_timestamp=receipt.get("ts"),
             )
 
     @staticmethod

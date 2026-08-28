@@ -37,6 +37,10 @@ class ControlPlane:
     def activity(self):
         return self.drafts.list({"APPROVED", "REJECTED", "EXPIRED", "CONSUMED"})
 
+    def activity_result(self, draft_id: str) -> dict | None:
+        getter = getattr(self.signer, "operation_record", None)
+        return getter(draft_id) if getter is not None else None
+
     def create_operator_draft(
         self, room: str, text: str, session: OperatorSession, *, source: str
     ):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import time
@@ -15,6 +16,12 @@ MAX_RESPONSE_BYTES = 1024 * 1024
 class _RejectRedirects(HTTPRedirectHandler):
     def redirect_request(self, *_args, **_kwargs):
         return None
+
+
+@dataclass(frozen=True, slots=True)
+class SubmissionResult:
+    status: str
+    receipt: dict[str, object] | None = None
 
 
 class TechnocoreTransport:
@@ -54,9 +61,9 @@ class TechnocoreTransport:
             raise ValueError("transport DID is invalid")
         self._public_did = did
 
-    def submit(self, operation) -> str:
+    def submit(self, operation) -> SubmissionResult:
         if not ROOM_PATTERN.fullmatch(operation.room):
-            return "rejected"
+            return SubmissionResult("rejected")
         body = json.dumps(
             {
                 "did": operation.did,
@@ -79,19 +86,22 @@ class TechnocoreTransport:
         )
         try:
             with self._opener.open(request, timeout=self.timeout) as response:
-                self._read_bounded(response)
-                return "accepted" if 200 <= response.status < 300 else "unknown"
+                raw = self._read_bounded(response)
+                if not 200 <= response.status < 300:
+                    return SubmissionResult("unknown")
+                receipt = self._parse_receipt(raw, operation)
+                return SubmissionResult("accepted", receipt) if receipt else SubmissionResult("unknown")
         except HTTPError as exc:
             self._drain_error(exc)
             if exc.code in {408, 425, 429} or 500 <= exc.code <= 599:
-                return "unknown"
-            return "rejected" if 400 <= exc.code <= 499 else "unknown"
-        except (OSError, TimeoutError, URLError):
-            return "unknown"
+                return SubmissionResult("unknown")
+            return SubmissionResult("rejected" if 400 <= exc.code <= 499 else "unknown")
+        except (OSError, TimeoutError, URLError, ValueError):
+            return SubmissionResult("unknown")
 
-    def reconcile(self, operation) -> str:
+    def reconcile(self, operation) -> SubmissionResult:
         if self._public_did is None or not ROOM_PATTERN.fullmatch(operation["lane"]):
-            return "unknown"
+            return SubmissionResult("unknown")
         query = urlencode({"format": "json", "limit": 200, "n": self._clock()})
         request = Request(
             f"{self.base_url}/r/{quote(operation['lane'], safe='')}?{query}",
@@ -102,18 +112,80 @@ class TechnocoreTransport:
             with self._opener.open(request, timeout=self.timeout) as response:
                 value = json.loads(self._read_bounded(response).decode("utf-8"))
         except (HTTPError, OSError, TimeoutError, URLError, ValueError):
-            return "unknown"
+            return SubmissionResult("unknown")
+        if not isinstance(value, dict) or value.get("room") != operation["lane"]:
+            return SubmissionResult("unknown")
         messages = value.get("messages") if isinstance(value, dict) else None
         if not isinstance(messages, list):
-            return "unknown"
+            return SubmissionResult("unknown")
         expected_nonce = operation.get("nonce")
         for item in messages:
             if not isinstance(item, dict):
                 continue
             nonce = item.get("nonce")
-            if item.get("from") == self._public_did and str(nonce) == str(expected_nonce):
-                return "accepted"
-        return "unknown"
+            text = item.get("text")
+            expected_hash = operation.get("text_hash")
+            text_matches = (
+                isinstance(text, str)
+                and (expected_hash is None or hashlib.sha256(text.encode()).hexdigest() == expected_hash)
+            )
+            if (
+                item.get("from") == self._public_did
+                and str(nonce) == str(expected_nonce)
+                and text_matches
+            ):
+                receipt = self._sanitize_message_receipt(operation["lane"], item)
+                if receipt is not None:
+                    return SubmissionResult("accepted", receipt)
+        return SubmissionResult("unknown")
+
+    @classmethod
+    def _parse_receipt(cls, raw: bytes, operation) -> dict[str, object] | None:
+        value = json.loads(raw.decode("utf-8"))
+        if not isinstance(value, dict) or value.get("room") != operation.room:
+            return None
+        messages = value.get("messages")
+        if not isinstance(messages, list):
+            return None
+        matches = [
+            item
+            for item in messages
+            if isinstance(item, dict)
+            and item.get("from") == operation.did
+            and item.get("text") == operation.text
+            and str(item.get("nonce")) == str(operation.nonce)
+        ]
+        if len(matches) != 1:
+            return None
+        return cls._sanitize_message_receipt(operation.room, matches[0])
+
+    @staticmethod
+    def _sanitize_message_receipt(room: str, item: dict) -> dict[str, object] | None:
+        sequence, timestamp = item.get("seq"), item.get("ts")
+        sender, text, nonce = item.get("from"), item.get("text"), item.get("nonce")
+        if (
+            not isinstance(sequence, int)
+            or isinstance(sequence, bool)
+            or sequence < 1
+            or not isinstance(timestamp, str)
+            or not 1 <= len(timestamp) <= 64
+            or not isinstance(sender, str)
+            or not sender.startswith("did:key:z6Mk")
+            or not isinstance(text, str)
+            or not 1 <= len(text) <= 4096
+            or not isinstance(nonce, int)
+            or isinstance(nonce, bool)
+            or nonce < 1
+        ):
+            return None
+        return {
+            "room": room,
+            "seq": sequence,
+            "ts": timestamp,
+            "from": sender,
+            "nonce": nonce,
+            "text": text,
+        }
 
     @staticmethod
     def _read_bounded(response) -> bytes:
