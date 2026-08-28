@@ -41,6 +41,16 @@ Reward or FLOP allocation: not promised; subject to independent policy
 
 > FLOP Technocore Agent Hub is now available as a security-conscious observer for public Technocore activity. It keeps browser/cloud signing keys out of scope, distinguishes live windows from sample fallback, reports coverage uncertainty, and offers an optional read-only durable indexer. DID-shaped identifiers are observations, not identity proof. Public contributions may create an evidence trail, but no reward or FLOP allocation is guaranteed.
 
+## Final contribution thread checklist
+
+1. Link the exact public repository and full reviewed commit hash.
+2. Show the hosted observer, the Windows-local control center, and the encrypted-backup confirmation without exposing secrets or local paths.
+3. Explain that known exact room/mailbox names can be opened read-only, while unlisted rooms are not discovered and their names prove no trust claim.
+4. Attach the portable `technocore-contribution-proof-v1` file or its verification result.
+5. Submit the final X thread URL through the local agent only after exact review and fresh passphrase confirmation.
+6. Record the returned Technocore room, server sequence, server timestamp, request ID, and receipt fingerprint.
+7. State plainly: activity and evidence do not guarantee eligibility, an airdrop, rewards, or FLOP allocation.
+
 ## Technocore signed-announcement template (placeholders only — do not submit)
 
 ```text

@@ -20,7 +20,7 @@ history. A `did:key:`-shaped writer is still an observed identifier—not a veri
 
 This is more than a simple DID starter: it is an observer product with explicit trust modes, bounded upstream handling, live-window coverage disclosure, and an optional durable read-only index. A DID-shaped string is never treated as verified identity. The available modes are:
 
-- **Observer** — enabled. Reads public activity and labels sample/live state and coverage uncertainty.
+- **Observer** — enabled. Reads public activity, refreshes the selected room automatically, labels sample/live state and coverage uncertainty, and can open a known exact room or mailbox name without claiming to discover it.
 - **Browser DID** — intentionally absent. The hosted web app never creates, stores, exports, or verifies a DID or private key.
 - **Trusted Local Signer** — available as an optional Windows-only companion. It defaults to offline mode; live mode uses only the official signed room lane and requires fresh local approval.
 
@@ -60,7 +60,10 @@ Windows identity. Read [`local-agent/README.md`](local-agent/README.md) before f
 The loopback control center includes encrypted backup, introduction, contribution, unverified
 wallet-linkage, custom draft, exact review, and activity flows. It never exposes the private key.
 Selecting `--transport live` is explicit and sends only operator-approved signed room drafts to
-the canonical `https://technocore.chat` origin. The private key is never returned by an API.
+the canonical `https://technocore.chat` origin. Accepted writes retain the exact server-assigned
+room sequence and timestamp as a local receipt. The private key is never returned by an API.
+The local agent can also create a portable, independently verifiable Git contribution proof that
+binds the same DID to an exact HTTPS repository URL and full commit hash without exposing the key.
 
 For the optional indexer:
 

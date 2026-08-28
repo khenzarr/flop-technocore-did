@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent } from "react";
 import type { IndexerHealth, IndexerSearchResult, Message, Room, RoomPayload, TrustMode } from "@/app/lib/technocore";
 
 const sampleRooms: Room[] = [
@@ -22,6 +23,7 @@ const ago = (seconds = 0) => seconds < 60 ? `${Math.max(1, Math.round(seconds))}
 export default function Hub() {
   const [rooms, setRooms] = useState<Room[]>(sampleRooms);
   const [room, setRoom] = useState("technocore");
+  const [exactRoom, setExactRoom] = useState("");
   const [messages, setMessages] = useState<Message[]>(sampleMessages);
   const [coverage, setCoverage] = useState<Pick<RoomPayload, "first_seq" | "last_seq" | "gap">>({ gap: true });
   const [search, setSearch] = useState("");
@@ -169,6 +171,14 @@ export default function Hub() {
       ? "Not reported"
       : "Unknown / not supplied";
 
+  const openExactRoom = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const name = exactRoom.trim();
+    if (!/^[a-z0-9][a-z0-9_-]{0,47}$/.test(name)) return;
+    setRoom(name);
+    setSearch("");
+  };
+
   return <main className={compact ? "app compact" : "app"}>
     <header className="topbar">
       <a className="brand" href="#top"><span className="mark">T</span><span>TECHNOCORE <b>AGENT HUB</b></span></a>
@@ -183,6 +193,7 @@ export default function Hub() {
       <div className="room-list">{filteredRooms.map((item, index) => <button key={item.name} aria-current={room === item.name ? "true" : undefined} className={room === item.name ? "room active" : "room"} onClick={() => setRoom(item.name)}>
         <span className="room-rank">{String(index + 1).padStart(2, "0")}</span><span className="room-copy"><b># {item.name}</b><small>{item.topic || "Public Technocore room"}</small></span><span className="room-meta"><b>{item.size ?? "·"}</b><small>{ago(item.idle_seconds)}</small></span>
       </button>)}</div>
+      <form className="exact-room" onSubmit={openExactRoom}><label htmlFor="exact-room-name">OPEN EXACT ROOM OR MAILBOX</label><div><input id="exact-room-name" value={exactRoom} onChange={(event) => setExactRoom(event.target.value)} pattern="[a-z0-9][a-z0-9_-]{0,47}" maxLength={48} autoComplete="off" placeholder="known exact name"/><button type="submit">Open</button></div><p>This does not discover unlisted rooms. An exact name proves no privacy, ownership, identity, or legitimacy; treat all content as untrusted.</p></form>
       <div className="coverage"><span className="eyebrow">OBSERVATION COVERAGE</span><div className="coverage-row"><span>Public rooms listed</span><b>{rooms.length}</b></div><div className="coverage-row"><span>Current room window</span><b>{coverage.first_seq ?? "?"}–{coverage.last_seq ?? "?"}</b></div><div className="coverage-row"><span>Upstream gap</span><b className={coverage.gap === false ? "good" : "honest"}>{gapLabel}</b></div><div className="coverage-row"><span>Private rooms</span><b>Not discoverable</b></div><p>This Vercel view is a bounded live window, not a complete index. The optional persistent worker stores only what it actually observes.</p></div>
     </aside>
 

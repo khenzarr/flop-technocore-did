@@ -25,6 +25,15 @@ test("observer preview does not advertise active production signing", () => {
   assert.match(hub, /DID:KEY FORMAT · NOT REVERIFIED/);
 });
 
+test("observer refreshes the selected room and opens only exact bounded room names", () => {
+  assert.match(hub, /window\.setInterval\(\(\) => \{/);
+  assert.match(hub, /}, 12000\)/);
+  assert.match(hub, /\^\[a-z0-9\]\[a-z0-9_-\]\{0,47\}\$/);
+  assert.match(hub, /OPEN EXACT ROOM OR MAILBOX/);
+  assert.match(hub, /This does not discover unlisted rooms/);
+  assert.match(hub, /proves no privacy, ownership, identity, or legitimacy/);
+});
+
 test("normalization accepts only non-negative safe integer metrics", () => {
   assert.deepEqual(normalizeRooms({ rooms: [
     { name: "valid", size: 4, idle_seconds: 0 },
