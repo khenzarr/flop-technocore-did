@@ -43,20 +43,20 @@ def operation():
 
 
 def room_response(*, text="hello", nonce=7, sender="did:key:z6MkExample", seq=42):
+    posted = {
+        "seq": seq,
+        "ts": "2026-08-28T12:52:29.000000+00:00",
+        "from": sender,
+        "nonce": nonce,
+        "text": text,
+    }
     return json.dumps(
         {
             "room": "lobby",
             "count": 1,
             "last_seq": seq,
-            "messages": [
-                {
-                    "seq": seq,
-                    "ts": "2026-08-28T12:52:29.000000+00:00",
-                    "from": sender,
-                    "nonce": nonce,
-                    "text": text,
-                }
-            ],
+            "messages": [posted],
+            "posted": posted,
         }
     ).encode()
 
@@ -75,7 +75,7 @@ def test_submit_uses_canonical_https_post_and_accepts_success():
         "text": "hello",
     }
     request, timeout = opener.requests[0]
-    assert request.full_url == "https://technocore.chat/r/lobby"
+    assert request.full_url == "https://technocore.chat/r/lobby?format=json"
     assert request.method == "POST"
     assert timeout == 15
     assert json.loads(request.data) == {
@@ -118,6 +118,7 @@ def test_reconcile_never_claims_rejection_when_message_is_absent():
     [
         b"ok",
         b"{}",
+        json.dumps({"room": "lobby", "messages": []}).encode(),
         room_response(text="changed"),
         room_response(nonce=8),
         room_response(sender="did:key:z6MkOther"),

@@ -75,7 +75,7 @@ class TechnocoreTransport:
             separators=(",", ":"),
         ).encode("utf-8")
         request = Request(
-            f"{self.base_url}/r/{quote(operation.room, safe='')}",
+            f"{self.base_url}/r/{quote(operation.room, safe='')}?format=json",
             data=body,
             method="POST",
             headers={
@@ -147,17 +147,22 @@ class TechnocoreTransport:
         messages = value.get("messages")
         if not isinstance(messages, list):
             return None
-        matches = [
-            item
-            for item in messages
-            if isinstance(item, dict)
-            and item.get("from") == operation.did
-            and item.get("text") == operation.text
-            and str(item.get("nonce")) == str(operation.nonce)
-        ]
-        if len(matches) != 1:
+        posted = value.get("posted")
+        if not isinstance(posted, dict):
             return None
-        return cls._sanitize_message_receipt(operation.room, matches[0])
+        receipt = cls._sanitize_message_receipt(operation.room, posted)
+        if (
+            receipt is None
+            or receipt["from"] != operation.did
+            or receipt["text"] != operation.text
+            or str(receipt["nonce"]) != str(operation.nonce)
+            or not any(
+                isinstance(item, dict) and item.get("seq") == receipt["seq"]
+                for item in messages
+            )
+        ):
+            return None
+        return receipt
 
     @staticmethod
     def _sanitize_message_receipt(room: str, item: dict) -> dict[str, object] | None:
