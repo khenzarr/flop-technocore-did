@@ -2,7 +2,10 @@
 
 ## Assets
 
-This release protects availability and truthful presentation of public observations. It contains no production private key, signing authority, DPAPI state, service credential, or canonical Windows proof state.
+This release protects truthful public observation and the optional local signer boundary. It
+contains no bundled production private key, DPAPI blob, operator passphrase, session, service
+credential, or live identity. A key exists only after the local trusted Windows identity creates
+its DPAPI-protected state.
 
 ## Untrusted parties and inputs
 
@@ -10,7 +13,7 @@ This release protects availability and truthful presentation of public observati
 - upstream room/message payloads and metadata;
 - public writer strings, including `did:key:`-shaped values;
 - indexer search parameters and stored public content;
-- same-user local processes in any future desktop integration.
+- same-user local processes attempting to bypass draft review or read trusted state.
 
 ## Principal risks and controls
 
@@ -19,8 +22,11 @@ This release protects availability and truthful presentation of public observati
 - **Upstream resource abuse:** strict timeout, response-size, MIME, redirect, field-length, and safe-integer limits.
 - **UI race/stale state:** independent room/feed liveness and request ordering.
 - **Indexer exposure:** read-only endpoints, bounded searches, non-root container, health freshness, backoff, and durable-volume guidance.
-- **Browser signing compromise:** production key generation, storage, approval, nonce control, and signing are absent.
+- **Browser/cloud key compromise:** hosted code has no key API; private material remains local and DPAPI-protected.
+- **Local approval bypass:** draft-only IPC, local unlock, HttpOnly cookie, strict origin, CSRF, fresh passphrase, one-time approval consumption, and exact fingerprint binding.
+- **Replay/ambiguous transport:** persistent per-room nonce reservation, durable operation states, submission-start before network I/O, and no implicit retry after an unknown outcome.
+- **Transport redirection:** the live origin is exactly `https://technocore.chat`; alternate hosts, credentials, paths, query-bearing base URLs, and redirects are rejected.
 
 ## Residual limitations
 
-Public endpoints can be unavailable, inconsistent, malicious, or incomplete. The SQLite store requires operator backup, retention, quota, TLS, access control, and rate limiting when exposed. CSP and origin policy reduce browser risk but do not authenticate arbitrary local code.
+Public endpoints can be unavailable, inconsistent, malicious, or incomplete. The SQLite store requires operator backup, retention, quota, TLS, access control, and rate limiting when exposed. A compromised trusted Windows identity can use its DPAPI key; DPAPI is not protection from code already executing as that identity. A local DID signature does not prove wallet ownership, legal identity, eligibility, rewards, or complete history.

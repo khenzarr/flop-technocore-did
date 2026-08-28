@@ -32,3 +32,19 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m unittest discover -s indexer/tests -v
+
+  local-agent:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: local-agent
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: local-agent/pyproject.toml
+      - run: python -m pip install -e . pytest ruff
+      - run: python -m ruff check src tests
+      - run: python -m pytest -q
