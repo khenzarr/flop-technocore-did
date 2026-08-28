@@ -307,6 +307,7 @@ def test_unified_dashboard_creates_only_reviewable_operator_drafts(tmp_path):
             "Encrypted DID backup",
             "Join Technocore",
             "Record a useful contribution",
+            "Sign an exact Git revision",
             "Optional wallet linkage declaration",
             "Compose a signed room message",
         ):
@@ -329,6 +330,66 @@ def test_unified_dashboard_creates_only_reviewable_operator_drafts(tmp_path):
         assert draft.room == "technocore"
         assert "https://example.com/useful-tool" in draft.cleaned_text
         assert not (tmp_path / "approvals.json").exists()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_dashboard_commit_proof_requires_fresh_auth_and_returns_only_public_result(tmp_path):
+    auth = OperatorAuth(tmp_path / "operator.json")
+    auth.enroll(PASS)
+    calls = []
+    control = ControlPlane(
+        DraftStore(tmp_path / "drafts.json"),
+        ApprovalStore(tmp_path / "approvals.json"),
+        auth,
+        _SignerStub(),
+        contribution_proof=lambda url, commit: calls.append((url, commit))
+        or {
+            "path": str(tmp_path / "proof.json"),
+            "commit": commit.lower(),
+            "did": _SignerStub.did,
+            "schema": "technocore-contribution-proof-v1",
+            "artifact_url": url,
+            "signature": "s" * 86,
+        },
+    )
+    server = create_server(control)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    url = f"http://127.0.0.1:{server.server_port}"
+    try:
+        _, headers, _ = _request(
+            url,
+            "/unlock",
+            data={"passphrase": PASS},
+            origin=url,
+            follow_redirects=False,
+        )
+        cookie = SimpleCookie(headers["Set-Cookie"])
+        session_cookie = f"tc_session={cookie['tc_session'].value}"
+        session = auth.validate(cookie["tc_session"].value)
+        status, _, body = _request(
+            url,
+            "/proof/create",
+            data={
+                "csrf": session.csrf_token,
+                "artifact_url": "https://github.com/khenzarr/flop-technocore-did",
+                "commit": "9aa6803e52d8c91de07e9b76bb481e75c77b7b55",
+                "passphrase": PASS,
+            },
+            cookie=session_cookie,
+            origin=url,
+        )
+        assert status == 200 and "Signed contribution proof created" in body
+        assert PASS not in body and "private_key" not in body
+        assert calls == [
+            (
+                "https://github.com/khenzarr/flop-technocore-did",
+                "9aa6803e52d8c91de07e9b76bb481e75c77b7b55",
+            )
+        ]
     finally:
         server.shutdown()
         server.server_close()

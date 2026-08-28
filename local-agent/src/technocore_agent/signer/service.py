@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from ..evidence.contribution import create_contribution_proof
 from ..storage.nonce import NonceStore
 from .canonical import canonical_message
 
@@ -57,6 +58,9 @@ class Signer:
         message = canonical_message(room, nonce, text)
         signature = base64.urlsafe_b64encode(self._key.sign(message.encode())).decode().rstrip("=")
         return SignedOperation(self.did, room, nonce, signature, message.rsplit("|", 1)[1])
+
+    def create_contribution_proof(self, artifact_url: str, commit: str) -> dict[str, str]:
+        return create_contribution_proof(self._key, self.did, artifact_url, commit)
 
     def execute_room(self, request_id: str, room: str, text: str, approval: Approval) -> dict:
         if self._approvals is None:

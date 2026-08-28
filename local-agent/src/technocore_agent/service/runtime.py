@@ -10,6 +10,7 @@ from ..control.approval import ApprovalStore
 from ..control.drafts import DraftStore
 from ..control.operator import OperatorAuth
 from ..control.service import ControlPlane
+from ..evidence.contribution import write_new_proof
 from ..evidence.ledger import Ledger
 from ..policy.transport import RecordingTransport
 from ..signer.service import Signer
@@ -113,6 +114,7 @@ class TrustedRuntime:
             self._signer,
             mode="live" if type(self._transport).__name__ == "TechnocoreTransport" else "offline",
             identity_backup=self._backup_identity,
+            contribution_proof=self._create_contribution_proof,
         )
 
     def _backup_identity(self, passphrase: str) -> dict[str, str]:
@@ -127,6 +129,15 @@ class TrustedRuntime:
             passphrase_provider=lambda _prompt: passphrase,
         )
         return {"path": str(path), "public_did": did}
+
+    def _create_contribution_proof(self, artifact_url: str, commit: str) -> dict[str, str]:
+        proof = self._signer.create_contribution_proof(artifact_url, commit)
+        destination = Path.home() / "Downloads"
+        if not destination.is_dir():
+            destination = Path.home()
+        path = destination / f"technocore-contribution-proof-{proof['commit'][:12]}.json"
+        write_new_proof(path, proof)
+        return {**proof, "path": str(path)}
 
     def proof_status(self, expected_service_sid: str | None = None) -> dict:
         """Return only non-secret evidence, and only for an installer marker."""

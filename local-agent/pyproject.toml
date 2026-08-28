@@ -1,6 +1,6 @@
 [project]
 name = "technocore-agent-local"
-version = "0.2.2"
+version = "0.3.0"
 description = "Windows-local, operator-approved Technocore DID signer"
 requires-python = ">=3.12"
 dependencies = ["cryptography==50.0.0"]
@@ -12,6 +12,7 @@ technocore-agent-init = "technocore_agent.service.local_init:main"
 technocore-agent-identity = "technocore_agent.service.identity_recovery:main"
 technocore-draft-client = "technocore_agent.service.client:main"
 technocore-agent-operator-init = "technocore_agent.service.operator_init:main"
+technocore-agent-proof = "technocore_agent.evidence.contribution:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -20,12 +20,14 @@ class ControlPlane:
         *,
         mode: str = "offline",
         identity_backup=None,
+        contribution_proof=None,
     ) -> None:
         self.drafts, self.approvals, self.auth, self.signer = drafts, approvals, auth, signer
         if mode not in {"offline", "live"}:
             raise ValueError("control-plane mode is invalid")
         self.mode = mode
         self._identity_backup = identity_backup
+        self._contribution_proof = contribution_proof
 
     @property
     def public_did(self) -> str:
@@ -69,6 +71,19 @@ class ControlPlane:
         if not isinstance(passphrase, str) or len(passphrase) < 20:
             raise ValueError("use a unique backup passphrase of at least 20 characters")
         return self._identity_backup(passphrase)
+
+    def create_contribution_proof(
+        self,
+        session: OperatorSession,
+        artifact_url: str,
+        commit: str,
+        fresh_passphrase: str,
+    ) -> dict[str, str]:
+        self.auth.validate(session.session_id, session.csrf_token)
+        self.auth.reauthenticate(fresh_passphrase)
+        if self._contribution_proof is None:
+            raise ValueError("contribution proof is unavailable in this runtime")
+        return self._contribution_proof(artifact_url, commit)
 
     def reject(self, draft_id: str, session: OperatorSession):
         self.auth.validate(session.session_id, session.csrf_token)

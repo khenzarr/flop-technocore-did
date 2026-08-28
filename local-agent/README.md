@@ -76,6 +76,23 @@ draft until the operator reviews the exact cleaned text and enters a fresh passp
 Accepted live writes show and retain the exact Technocore room sequence and server timestamp, so
 the public contribution trail can be cited later without searching an already-rotated room window.
 
+## Exact Git contribution proof
+
+For a public Git-based contribution, the dashboard can sign one immutable 40- or 64-character
+revision using the same local DID. Enter the public HTTPS repository URL, the full commit hash, and
+a fresh operator passphrase. The trusted process creates a
+`technocore-contribution-proof-v1` JSON file in Downloads, verifies it with the public DID, and
+never exposes the private key. The format is compatible with the Zun Technocore DID starter.
+
+Anyone can verify the public file without your private key:
+
+```powershell
+technocore-agent-proof .\technocore-contribution-proof-<commit>.json
+```
+
+This proves that the DID signed the repository URL and exact revision. It does not prove authorship
+of every byte in the repository, wallet ownership, testnet activity, or reward eligibility.
+
 ## Portable DID backup and restore
 
 The dashboard can create a separately passphrase-encrypted backup in the current user's Downloads
