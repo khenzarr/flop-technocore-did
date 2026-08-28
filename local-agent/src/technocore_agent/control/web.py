@@ -59,7 +59,7 @@ def make_handler(control, expected_origin: str):
                 self._send(403, str(exc))
 
         def do_POST(self):
-            if self.headers.get("Origin") != expected_origin:
+            if not self._same_origin_post():
                 return self._send(403, "origin rejected")
             try:
                 length = int(self.headers.get("Content-Length", "0"))
@@ -127,6 +127,20 @@ def make_handler(control, expected_origin: str):
             except (OperatorAuthError, ValueError) as exc:
                 return self._send(403, str(exc))
             self._send(404, "not found")
+
+        def _same_origin_post(self) -> bool:
+            origin = self.headers.get("Origin")
+            if origin == expected_origin:
+                return True
+            if origin not in {None, "null"}:
+                return False
+            expected_host = urlsplit(expected_origin).netloc
+            return (
+                self.headers.get("Host") == expected_host
+                and self.headers.get("Sec-Fetch-Site") == "same-origin"
+                and self.headers.get("Sec-Fetch-Mode") == "navigate"
+                and self.headers.get("Sec-Fetch-Dest") == "document"
+            )
 
         def _page(self) -> str:
             session = self._session(required=False)

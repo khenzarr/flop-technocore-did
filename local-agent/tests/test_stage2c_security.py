@@ -28,12 +28,20 @@ class _SignerStub:
         return {"request_id": request_id, "state": "ACCEPTED"}
 
 
-def _request(url, path, *, data=None, cookie=None, origin=None):
+def _request(url, path, *, data=None, cookie=None, origin=None, browser_form=False):
     headers = {}
     if cookie:
         headers["Cookie"] = cookie
     if origin:
         headers["Origin"] = origin
+    if browser_form:
+        headers.update(
+            {
+                "Sec-Fetch-Site": "same-origin",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Dest": "document",
+            }
+        )
     encoded = urllib.parse.urlencode(data).encode() if data is not None else None
     request = urllib.request.Request(url + path, data=encoded, headers=headers)
     try:
@@ -134,8 +142,20 @@ def test_dashboard_requires_session_origin_and_csrf_and_can_lock(tmp_path):
         assert _request(url, f"/draft/{draft.draft_id}/approve", data={})[0] == 403
         assert _request(url, f"/draft/{draft.draft_id}/reject", data={})[0] == 403
         assert _request(url, "/unlock", data={"passphrase": PASS}, origin="http://evil")[0] == 403
+        assert (
+            _request(
+                url,
+                "/unlock",
+                data={"passphrase": PASS},
+                origin="http://evil",
+                browser_form=True,
+            )[0]
+            == 403
+        )
 
-        status, headers, _ = _request(url, "/unlock", data={"passphrase": PASS}, origin=url)
+        status, headers, _ = _request(
+            url, "/unlock", data={"passphrase": PASS}, browser_form=True
+        )
         assert status == 204
         cookie = SimpleCookie(headers["Set-Cookie"])
         session_cookie = f"tc_session={cookie['tc_session'].value}"
