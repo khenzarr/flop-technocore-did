@@ -28,7 +28,21 @@ class _SignerStub:
         return {"request_id": request_id, "state": "ACCEPTED"}
 
 
-def _request(url, path, *, data=None, cookie=None, origin=None, browser_form=False):
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _request(
+    url,
+    path,
+    *,
+    data=None,
+    cookie=None,
+    origin=None,
+    browser_form=False,
+    follow_redirects=True,
+):
     headers = {}
     if cookie:
         headers["Cookie"] = cookie
@@ -44,8 +58,13 @@ def _request(url, path, *, data=None, cookie=None, origin=None, browser_form=Fal
         )
     encoded = urllib.parse.urlencode(data).encode() if data is not None else None
     request = urllib.request.Request(url + path, data=encoded, headers=headers)
+    opener = (
+        urllib.request.urlopen
+        if follow_redirects
+        else urllib.request.build_opener(_NoRedirect()).open
+    )
     try:
-        with urllib.request.urlopen(request, timeout=5) as response:
+        with opener(request, timeout=5) as response:
             return response.status, response.headers, response.read().decode()
     except urllib.error.HTTPError as exc:
         return exc.code, exc.headers, exc.read().decode()
@@ -154,9 +173,13 @@ def test_dashboard_requires_session_origin_and_csrf_and_can_lock(tmp_path):
         )
 
         status, headers, _ = _request(
-            url, "/unlock", data={"passphrase": PASS}, browser_form=True
+            url,
+            "/unlock",
+            data={"passphrase": PASS},
+            browser_form=True,
+            follow_redirects=False,
         )
-        assert status == 204
+        assert status == 303 and headers["Location"] == "/"
         cookie = SimpleCookie(headers["Set-Cookie"])
         session_cookie = f"tc_session={cookie['tc_session'].value}"
         assert cookie["tc_session"]["httponly"] and cookie["tc_session"]["samesite"] == "Strict"
@@ -268,7 +291,13 @@ def test_unified_dashboard_creates_only_reviewable_operator_drafts(tmp_path):
     thread.start()
     url = f"http://127.0.0.1:{server.server_port}"
     try:
-        _, headers, _ = _request(url, "/unlock", data={"passphrase": PASS}, origin=url)
+        _, headers, _ = _request(
+            url,
+            "/unlock",
+            data={"passphrase": PASS},
+            origin=url,
+            follow_redirects=False,
+        )
         cookie = SimpleCookie(headers["Set-Cookie"])
         session_cookie = f"tc_session={cookie['tc_session'].value}"
         session = auth.validate(cookie["tc_session"].value)
@@ -324,7 +353,13 @@ def test_wallet_linkage_is_explicitly_unverified_and_backup_never_returns_key(tm
     thread.start()
     url = f"http://127.0.0.1:{server.server_port}"
     try:
-        _, headers, _ = _request(url, "/unlock", data={"passphrase": PASS}, origin=url)
+        _, headers, _ = _request(
+            url,
+            "/unlock",
+            data={"passphrase": PASS},
+            origin=url,
+            follow_redirects=False,
+        )
         cookie = SimpleCookie(headers["Set-Cookie"])
         session_cookie = f"tc_session={cookie['tc_session'].value}"
         session = auth.validate(cookie["tc_session"].value)

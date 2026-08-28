@@ -76,10 +76,10 @@ def make_handler(control, expected_origin: str):
                     session = control.auth.unlock(data.get("passphrase", [""])[0])
                 except OperatorAuthError:
                     return self._send(401, "unlock failed")
-                self.send_response(204)
-                self.send_header("Set-Cookie", f"tc_session={session.session_id}; HttpOnly; SameSite=Strict; Path=/; Max-Age={control.auth.session_ttl}")
-                self.end_headers()
-                return
+                return self._redirect(
+                    "/",
+                    session_cookie=f"tc_session={session.session_id}; HttpOnly; SameSite=Strict; Path=/; Max-Age={control.auth.session_ttl}",
+                )
             try:
                 session = self._session(csrf=data.get("csrf", [None])[0])
                 parts = self.path.strip("/").split("/")
@@ -190,10 +190,12 @@ def make_handler(control, expected_origin: str):
         def _json(self, status, value):
             self._send(status, json.dumps(value), "application/json")
 
-        def _redirect(self, location: str):
+        def _redirect(self, location: str, *, session_cookie: str | None = None):
             self.send_response(303)
             self.send_header("Location", location)
             self.send_header("Cache-Control", "no-store")
+            if session_cookie is not None:
+                self.send_header("Set-Cookie", session_cookie)
             self.end_headers()
 
         def _send(self, status, body, content_type="text/plain; charset=utf-8", *, clear_cookie=False):
