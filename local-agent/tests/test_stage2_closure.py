@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json
@@ -15,6 +16,7 @@ from technocore_agent.evidence.ledger import Ledger, LedgerError
 from technocore_agent.ipc.subprocess_broker import serve_once
 from technocore_agent.policy.transport import RecordingTransport, SubmissionResult
 from technocore_agent.signer import Signer
+from technocore_agent.signer.canonical import canonical_message
 from technocore_agent.storage import dpapi
 from technocore_agent.storage.nonce import NonceError, NonceStore, OperationStore
 
@@ -56,6 +58,71 @@ def _approval(tmp_path, request_id="request", room="room", text="hello"):
 
 def _execute(service, approval, room="room", text="hello"):
     return service.execute_room(approval.draft_id, room, text, approval)
+
+
+class _UnreachableTransport:
+    def __init__(self):
+        self.calls = 0
+
+    def submit(self, _operation):
+        self.calls += 1
+        raise AssertionError("detached signing must not submit")
+
+
+def test_detached_room_signing_returns_verified_operation_and_consumes_nonce(tmp_path):
+    transport = _UnreachableTransport()
+    service = Signer(_key(), NonceStore(tmp_path / "nonces.json"), transport=transport)
+    first = service.sign_room_detached("room", "  hello\u200b  ")
+    second = service.sign_room_detached("room", "next")
+
+    assert first.room == second.room == "room"
+    assert first.text == "hello"
+    assert (first.nonce, second.nonce) == (1, 2)
+    public = _key().public_key()
+    public.verify(
+        base64.urlsafe_b64decode(first.signature + "=="),
+        canonical_message(first.room, first.nonce, first.text).encode(),
+    )
+    assert transport.calls == 0
+    assert json.loads((tmp_path / "nonces.json").read_text())["counters"]["room"] == 2
+
+
+def test_detached_concurrent_signers_reserve_distinct_nonces(tmp_path):
+    path = tmp_path / "nonces.json"
+    code = (
+        "from pathlib import Path; from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey; "
+        "from technocore_agent.signer import Signer; from technocore_agent.storage.nonce import NonceStore; "
+        "import sys; print(Signer(Ed25519PrivateKey.from_private_bytes(bytes(range(32))), NonceStore(Path(sys.argv[1]))).sign_room_detached('room', 'text').nonce)"
+    )
+    processes = [
+        subprocess.Popen([sys.executable, "-c", code, str(path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        for _ in range(8)
+    ]
+    results = []
+    for process in processes:
+        stdout, stderr = process.communicate(timeout=20)
+        assert process.returncode == 0, stderr
+        results.append(int(stdout.strip()))
+    assert sorted(results) == list(range(1, 9))
+
+
+def test_detached_validation_and_signing_failures_consume_no_or_one_nonce(tmp_path):
+    service = Signer(_key(), NonceStore(tmp_path / "nonces.json"))
+    with pytest.raises(ValueError):
+        service.sign_room_detached("bad|room", "hello")
+    assert not (tmp_path / "nonces.json").exists()
+
+    class BrokenKey:
+        def public_key(self):
+            return _key().public_key()
+
+        def sign(self, _message):
+            raise RuntimeError("fixture signing failure")
+
+    broken = Signer(cast(Ed25519PrivateKey, BrokenKey()), NonceStore(tmp_path / "broken.json"))
+    with pytest.raises(RuntimeError, match="fixture signing failure"):
+        broken.sign_room_detached("room", "hello")
+    assert NonceStore(tmp_path / "broken.json").reserve("room", "next") == 2
 
 
 def test_nonce_request_reservation_is_one_atomic_document(tmp_path):

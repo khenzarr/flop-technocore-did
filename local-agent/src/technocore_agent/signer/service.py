@@ -54,10 +54,19 @@ class Signer:
         self.did = canonical_did(key)
 
     def sign_room(self, room: str, text: str) -> SignedOperation:
+        cleaned = canonical_message(room, 1, text).rsplit("|", 1)[1]
         nonce = self._nonces.reserve(room)
-        message = canonical_message(room, nonce, text)
-        signature = base64.urlsafe_b64encode(self._key.sign(message.encode())).decode().rstrip("=")
-        return SignedOperation(self.did, room, nonce, signature, message.rsplit("|", 1)[1])
+        return self._sign_with_nonce(room, cleaned, nonce)
+
+    def sign_room_detached(self, room: str, text: str) -> SignedOperation:
+        """Sign a room operation and return it without contacting Technocore.
+
+        Reservation is durable and consumed even when the returned operation is never
+        submitted.  This method intentionally has no operation-store or transport path.
+        """
+        cleaned = canonical_message(room, 1, text).rsplit("|", 1)[1]
+        nonce = self._nonces.reserve(room)
+        return self._sign_with_nonce(room, cleaned, nonce)
 
     def create_contribution_proof(self, artifact_url: str, commit: str) -> dict[str, str]:
         return create_contribution_proof(self._key, self.did, artifact_url, commit)
