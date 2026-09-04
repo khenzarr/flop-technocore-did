@@ -78,6 +78,26 @@ class DPAPIKeyProvider:
 DPAPITestKeyProvider = DPAPIKeyProvider
 
 
+def create_local_signer(
+    paths: TrustedPaths,
+    key_provider,
+    *,
+    nonces: NonceStore | None = None,
+    operations=None,
+    transport=None,
+    ledger=None,
+    approvals=None,
+) -> Signer:
+    """Create only the canonical local custody/signing surface.
+
+    Optional components are dependency-injected so the live runtime can retain its exact
+    behavior, while the detached caller supplies none of them and therefore has no transport.
+    """
+    paths.root.mkdir(parents=True, exist_ok=True)
+    key = key_provider.load_or_create()
+    return Signer(key, nonces or NonceStore(paths.nonces), operations, transport, ledger, approvals)
+
+
 class TrustedRuntime:
     """The sole runtime owner of trusted stores, authentication, key, and signer."""
 
@@ -91,14 +111,14 @@ class TrustedRuntime:
         self._ledger = Ledger(paths.evidence)
         self.auth = OperatorAuth(paths.operator)
         self._transport = transport or RecordingTransport([])
-        key = key_provider.load_or_create()
-        self._signer = Signer(
-            key,
-            self._nonces,
-            self._operations,
-            self._transport,
-            self._ledger,
-            self._approvals,
+        self._signer = create_local_signer(
+            paths,
+            key_provider,
+            nonces=self._nonces,
+            operations=self._operations,
+            transport=self._transport,
+            ledger=self._ledger,
+            approvals=self._approvals,
         )
         bind_did = getattr(self._transport, "bind_did", None)
         if bind_did is not None:
