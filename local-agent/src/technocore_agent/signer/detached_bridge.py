@@ -6,6 +6,7 @@ owned by the canonical agent and is not reachable through this Phase 3A.7 comman
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -15,7 +16,21 @@ from ..storage.nonce import NonceStore
 from .service import Signer
 
 SCHEMA = "technocore-detached-sign-request/v1"
-EXPECTED_COMMIT = "e5bd617b36c69315c238ef39bfca7c3f5a8c4d98"
+
+
+def _actual_commit() -> str:
+    """Return this bridge's repository HEAD; the parent supplies the reviewed pin."""
+    root = Path(__file__).resolve().parents[4]
+    result = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    commit = result.stdout.strip()
+    if len(commit) != 40 or any(char not in "0123456789abcdef" for char in commit):
+        raise ValueError("canonical repository HEAD is invalid")
+    return commit
 
 
 def _request(raw: bytes) -> dict:
@@ -24,7 +39,10 @@ def _request(raw: bytes) -> dict:
     item = json.loads(raw)
     if not isinstance(item, dict) or set(item) != {"schema", "room", "text", "requestId", "expectedCanonicalCommit", "noncePath"}:
         raise ValueError("bridge request schema is invalid")
-    if item["schema"] != SCHEMA or item["expectedCanonicalCommit"] != EXPECTED_COMMIT:
+    if item["schema"] != SCHEMA:
+        raise ValueError("bridge request pin is invalid")
+    expected = item["expectedCanonicalCommit"]
+    if not isinstance(expected, str) or len(expected) != 40 or any(char not in "0123456789abcdef" for char in expected):
         raise ValueError("bridge request pin is invalid")
     if not all(isinstance(item[key], str) and item[key] for key in ("room", "text", "requestId", "noncePath")):
         raise ValueError("bridge request fields are invalid")
@@ -34,14 +52,18 @@ def _request(raw: bytes) -> dict:
 def serve_once() -> None:
     try:
         request = _request(sys.stdin.buffer.readline(16 * 1024 + 1))
+        actual_commit = _actual_commit()
+        if actual_commit != request["expectedCanonicalCommit"]:
+            raise ValueError("bridge repository HEAD does not match reviewed request pin")
         if not Path(request["noncePath"]).is_absolute():
             raise ValueError("noncePath must be absolute")
         # bytes(range(32)) is a published, disposable test vector, never operator custody.
         signer = Signer(Ed25519PrivateKey.from_private_bytes(bytes(range(32))), NonceStore(Path(request["noncePath"])))
         operation = signer.sign_room_detached(request["room"], request["text"])
         response = {"did": operation.did, "room": operation.room, "nonce": operation.nonce,
-                    "signature": operation.signature, "text": operation.text}
-    except (TypeError, ValueError, OSError, KeyError) as exc:
+                    "signature": operation.signature, "text": operation.text,
+                    "canonicalCommit": actual_commit}
+    except (TypeError, ValueError, OSError, KeyError, subprocess.SubprocessError) as exc:
         response = {"error": str(exc)}
     sys.stdout.write(json.dumps(response, sort_keys=True, separators=(",", ":")) + "\n")
     sys.stdout.flush()
