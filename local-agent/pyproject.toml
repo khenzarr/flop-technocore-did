@@ -9,6 +9,7 @@ dependencies = ["cryptography==50.0.0"]
 technocore-trusted-test-service = "technocore_agent.service.entrypoint:main"
 technocore-agent-local = "technocore_agent.service.entrypoint:main"
 technocore-agent-init = "technocore_agent.service.local_init:main"
+technocore-agent-profile-init = "technocore_agent.service.profile_init:main"
 technocore-agent-identity = "technocore_agent.service.identity_recovery:main"
 technocore-draft-client = "technocore_agent.service.client:main"
 technocore-agent-operator-init = "technocore_agent.service.operator_init:main"
