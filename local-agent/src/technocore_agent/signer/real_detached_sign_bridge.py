@@ -17,15 +17,15 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from ..service.runtime import DPAPIKeyProvider, TrustedPaths
 from ..storage.nonce import NonceStore
-from .service import Signer
 from .detached_controller import (
-    PURPOSE,
-    SCHEMA,
+    PURPOSE,  # noqa: F401
+    SCHEMA,  # noqa: F401
     DetachedRequest,
     run_detached_signing,
     sanitized_error,
     serialize_signed_operation,
 )
+from .service import Signer
 
 FIXTURE_KEY = bytes(range(32))
 

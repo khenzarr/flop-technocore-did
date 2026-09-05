@@ -30,7 +30,7 @@ class DetachedRequest:
     purpose: str
 
     @classmethod
-    def from_mapping(cls, item: object) -> "DetachedRequest":
+    def from_mapping(cls, item: object) -> DetachedRequest:
         required = {"schema", "requestId", "room", "text", "expectedCanonicalCommit", "purpose"}
         if not isinstance(item, dict) or set(item) != required:
             raise ValueError("bridge request schema is invalid")
