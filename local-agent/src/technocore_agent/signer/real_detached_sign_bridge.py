@@ -17,6 +17,8 @@ from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from ..service.local_init import default_local_state
+from ..service.profile_init import derive_profile_root, validate_profile
 from ..service.runtime import DPAPIKeyProvider, TrustedPaths
 from ..storage.nonce import NonceStore
 from .detached_controller import (
@@ -148,6 +150,7 @@ def _provider(mode: str, state: Path):
     if mode == "real":
         # Reachable only after the interactive canonical confirmation above.  Storage, key
         # representation, and any credential prompt remain the unmodified DPAPI provider.
+        # The logical selector is resolved internally; callers never choose a custody path.
         paths = TrustedPaths.under(state)
         return DPAPIKeyProvider(paths.protected_key)
     raise ValueError("custody mode is invalid")
@@ -167,6 +170,10 @@ def serve_once(request_path: Path, *, custody: str, state: Path, approval=None) 
         if custody == "real" and not isinstance(channel, TerminalApproval):
             raise PermissionError("real custody requires the operator terminal approval channel")
         request = _read_request(request_path)
+        parsed = DetachedRequest.from_mapping(request)
+        if parsed.profile != "default":
+            validate_profile(parsed.profile)
+        selected_root = default_local_state() if parsed.profile == "default" else derive_profile_root(parsed.profile)
         actual = _actual_commit()
         _clean_relevant_tree()
         # Attest the exact reviewed child before the operator is asked, so approval can only
@@ -174,9 +181,11 @@ def serve_once(request_path: Path, *, custody: str, state: Path, approval=None) 
         if actual != request["expectedCanonicalCommit"]:
             raise ValueError("canonical repository HEAD does not match expected commit")
         _require_canonical_operator(request, channel)
+        custody_root = selected_root if custody == "real" else state
         operation = run_detached_signing(
-            DetachedRequest.from_mapping(request), _provider(custody, state),
-            NonceStore(TrustedPaths.under(state).nonces), actual_canonical_commit=actual,
+            parsed, _provider(custody, custody_root),
+            NonceStore(TrustedPaths.under(custody_root).nonces), actual_canonical_commit=actual,
+            profile=parsed.profile, expected_signer_did=parsed.expected_signer_did,
         )
         response = serialize_signed_operation(operation, actual, custody)
     except Exception as exc:  # one sanitized machine-readable failure response
