@@ -37,7 +37,8 @@ class DetachedRequest:
     def from_mapping(cls, item: object) -> DetachedRequest:
         required = {"schema", "requestId", "room", "text", "expectedCanonicalCommit", "purpose"}
         profile_fields = {"profile", "expectedSignerDid"}
-        if not isinstance(item, dict) or set(item) not in (required, required | profile_fields):
+        allowed = (required, required | {"profile"}, required | profile_fields)
+        if not isinstance(item, dict) or set(item) not in allowed:
             raise ValueError("bridge request schema is invalid")
         if item["schema"] != SCHEMA or item["purpose"] != PURPOSE:
             raise ValueError("bridge request purpose or schema is invalid")
