@@ -68,6 +68,27 @@ class Signer:
         nonce = self._nonces.reserve(room)
         return self._sign_with_nonce(room, cleaned, nonce)
 
+    def sign_reserved_w2(self, *, request_id: str, room: str, text: str,
+                         nonce: str, expected_did: str, venue_origin: str,
+                         operation_id: str, approval_hash: str) -> SignedOperation:
+        """Sign one W2 reservation; never allocate a new nonce on this path."""
+        if self.did != expected_did:
+            raise ValueError("W2 signer DID does not match custody key")
+        if not isinstance(text, str) or not text.startswith("blackbox-w2 "):
+            raise ValueError("W2 signed text is invalid")
+        if canonical_message(room, 1, text) != f"{room}|1|{text}":
+            raise ValueError("W2 text would be changed by Technocore cleaning")
+        text_sha256 = "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+        consumed = self._nonces.consume_w2(
+            request_id, lane=room, signer_did=expected_did, venue_origin=venue_origin,
+            text_sha256=text_sha256, nonce=nonce,
+            operation_id=operation_id, approval_hash=approval_hash,
+        )
+        signed = self._sign_with_nonce(room, text, int(consumed["nonce"]))
+        signature_sha256 = "sha256:" + hashlib.sha256(signed.signature.encode("ascii")).hexdigest()
+        self._nonces.signed_w2(request_id, signature_sha256)
+        return signed
+
     def create_contribution_proof(self, artifact_url: str, commit: str) -> dict[str, str]:
         return create_contribution_proof(self._key, self.did, artifact_url, commit)
 

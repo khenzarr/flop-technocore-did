@@ -4,11 +4,13 @@ import hashlib
 import json
 import msvcrt
 import os
+import re
 import tempfile
 import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 class NonceError(ValueError):
@@ -37,6 +39,7 @@ def _file_lock(path: Path):
 
 
 class NonceStore:
+    # W2 shares the existing counter, atomic replace, and cross-process file lock.
     def __init__(self, path: Path, fault=None) -> None:
         self.path = Path(path)
         self._lock = threading.Lock()
@@ -64,6 +67,174 @@ class NonceStore:
                     reservations[request_id] = {"lane": lane, "nonce": value}
                 self._write_reservation_state(state)
                 return value
+
+    def reserve_w2(self, request_id: str, lane: str, signer_did: str,
+                   venue_origin: str, text_sha256: str) -> dict:
+        """Burn one nonce without constructing a key or creating a signature.
+
+        The request id is idempotent only for the exact immutable draft binding.
+        This deliberately shares the counter with the older room signer.
+        """
+        if not isinstance(request_id, str) or not re.fullmatch(r"w2draft1-[0-9a-f]{64}", request_id):
+            raise NonceError("W2 request id is invalid")
+        if not isinstance(lane, str) or not lane or "|" in lane:
+            raise NonceError("W2 nonce lane is invalid")
+        if not isinstance(signer_did, str) or not re.fullmatch(r"did:key:z6Mk[1-9A-HJ-NP-Za-km-z]{44}", signer_did):
+            raise NonceError("W2 signer DID is invalid")
+        parsed = urlsplit(venue_origin) if isinstance(venue_origin, str) else None
+        if (parsed is None or parsed.scheme != "https" or not parsed.netloc or
+                parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment or
+                venue_origin != f"https://{parsed.netloc.lower()}"):
+            raise NonceError("W2 venue is invalid")
+        if not isinstance(text_sha256, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", text_sha256):
+            raise NonceError("W2 text hash is invalid")
+        binding = {"request_id": request_id, "lane": lane, "signer_did": signer_did,
+                   "venue_origin": venue_origin, "text_sha256": text_sha256}
+        with self._lock:
+            with _file_lock(self.path.with_suffix(self.path.suffix + ".lock")):
+                state = self._read_reservation_state()
+                w2 = state.setdefault("w2_reservations", {})
+                if not isinstance(w2, dict):
+                    raise NonceError("W2 reservation state is corrupt")
+                old = w2.get(request_id)
+                if old is not None:
+                    if not isinstance(old, dict) or any(old.get(k) != v for k, v in binding.items()):
+                        raise NonceError("W2 request id conflicts with its reservation")
+                    return old.copy()
+                if request_id in state["requests"]:
+                    raise NonceError("W2 request id conflicts with a legacy reservation")
+                value = state["counters"].get(lane, 0) + 1
+                if value >= 10**19:
+                    raise NonceError("W2 nonce exhausted")
+                reservation = {**binding, "nonce": str(value), "state": "RESERVED",
+                               "created_at": time.time()}
+                state["counters"][lane] = value
+                w2[request_id] = reservation
+                self._write_reservation_state(state)
+                return reservation.copy()
+
+    def consume_w2(self, request_id: str, *, lane: str, signer_did: str,
+                   venue_origin: str, text_sha256: str, nonce: str,
+                   operation_id: str, approval_hash: str) -> dict:
+        """Spend the exact reservation before any W2 signature can be produced."""
+        if not isinstance(nonce, str) or not (nonce == "0" or
+                (nonce.isascii() and nonce.isdecimal() and nonce[0] != "0" and len(nonce) <= 19)):
+            raise NonceError("W2 nonce is not canonical decimal text")
+        if not isinstance(operation_id, str) or not re.fullmatch(r"w2op1-[0-9a-f]{64}", operation_id):
+            raise NonceError("W2 operation id is invalid")
+        if not isinstance(approval_hash, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", approval_hash):
+            raise NonceError("W2 approval hash is invalid")
+        with self._lock:
+            with _file_lock(self.path.with_suffix(self.path.suffix + ".lock")):
+                state = self._read_reservation_state()
+                reservation = state.get("w2_reservations", {}).get(request_id)
+                if not isinstance(reservation, dict):
+                    raise NonceError("W2 reservation is missing")
+                expected = {"lane": lane, "signer_did": signer_did,
+                            "venue_origin": venue_origin, "text_sha256": text_sha256,
+                            "nonce": nonce, "state": "APPROVED",
+                            "operation_id": operation_id, "approval_hash": approval_hash}
+                if any(reservation.get(k) != v for k, v in expected.items()):
+                    raise NonceError("W2 reservation binding or state mismatch")
+                reservation["state"] = "SIGNING_OUTCOME_UNCERTAIN"
+                reservation["operation_id"] = operation_id
+                reservation["approval_hash"] = approval_hash
+                reservation["consumed_at"] = time.time()
+                self._write_reservation_state(state)
+                return reservation.copy()
+
+    def approve_w2(self, request_id: str, *, lane: str, signer_did: str,
+                   venue_origin: str, text_sha256: str, nonce: str,
+                   operation_id: str, approval_hash: str) -> dict:
+        """Persist the exact terminal-approved binding before signature consumption."""
+        with self._lock:
+            with _file_lock(self.path.with_suffix(self.path.suffix + ".lock")):
+                state = self._read_reservation_state()
+                reservation = state.get("w2_reservations", {}).get(request_id)
+                expected = {"request_id": request_id, "lane": lane, "signer_did": signer_did,
+                            "venue_origin": venue_origin, "text_sha256": text_sha256, "nonce": nonce}
+                if not isinstance(reservation, dict) or any(reservation.get(k) != v for k, v in expected.items()):
+                    raise NonceError("W2 approval reservation binding mismatch")
+                if reservation["state"] == "APPROVED":
+                    if reservation.get("operation_id") != operation_id or reservation.get("approval_hash") != approval_hash:
+                        raise NonceError("W2 approval binding mismatch")
+                    return reservation.copy()
+                if reservation["state"] != "RESERVED":
+                    raise NonceError("W2 reservation is not approvable")
+                reservation["state"] = "APPROVED"
+                reservation["operation_id"] = operation_id
+                reservation["approval_hash"] = approval_hash
+                reservation["approved_at"] = time.time()
+                self._write_reservation_state(state)
+                return reservation.copy()
+
+    def cancel_w2(self, request_id: str, *, lane: str, signer_did: str,
+                  venue_origin: str, text_sha256: str, nonce: str,
+                  operation_id: str, approval_hash: str, reason: str = "CANCELLED") -> dict:
+        """Burn only the exact un-signed W2 reservation; repeat is read-only."""
+        if reason not in {"CANCELLED", "EXPIRED"}:
+            raise NonceError("W2 cancellation reason is invalid")
+        with self._lock:
+            with _file_lock(self.path.with_suffix(self.path.suffix + ".lock")):
+                state = self._read_reservation_state()
+                reservation = state.get("w2_reservations", {}).get(request_id)
+                expected = {"request_id": request_id, "lane": lane, "signer_did": signer_did,
+                            "venue_origin": venue_origin, "text_sha256": text_sha256, "nonce": nonce}
+                if not isinstance(reservation, dict) or any(reservation.get(k) != v for k, v in expected.items()):
+                    raise NonceError("W2 cancellation reservation binding mismatch")
+                if reservation["state"] == "BURNED":
+                    if (reservation.get("burn_reason") != reason or reservation.get("operation_id") != operation_id
+                            or reservation.get("approval_hash") != approval_hash):
+                        raise NonceError("W2 cancellation terminal binding mismatch")
+                    return reservation.copy()
+                if reservation["state"] not in {"RESERVED", "APPROVED"}:
+                    raise NonceError("W2 reservation crossed signing boundary")
+                if reservation["state"] == "APPROVED" and (
+                        reservation.get("operation_id") != operation_id or reservation.get("approval_hash") != approval_hash):
+                    raise NonceError("W2 cancellation approval binding mismatch")
+                reservation["state"] = "BURNED"
+                reservation["operation_id"] = operation_id
+                reservation["approval_hash"] = approval_hash
+                reservation["burn_reason"] = reason
+                reservation["burned_at"] = time.time()
+                reservation["audit_event"] = "CANCELED_BEFORE_SIGNING" if reason == "CANCELLED" else "APPROVAL_EXPIRED"
+                self._write_reservation_state(state)
+                return reservation.copy()
+
+    def signed_w2(self, request_id: str, signature_sha256: str) -> dict:
+        """Record success after signing; never re-enable the spent reservation."""
+        if not isinstance(signature_sha256, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", signature_sha256):
+            raise NonceError("W2 signature hash is invalid")
+        with self._lock:
+            with _file_lock(self.path.with_suffix(self.path.suffix + ".lock")):
+                state = self._read_reservation_state()
+                reservation = state.get("w2_reservations", {}).get(request_id)
+                if not isinstance(reservation, dict) or reservation.get("state") != "SIGNING_OUTCOME_UNCERTAIN":
+                    raise NonceError("W2 signature completion state is invalid")
+                reservation["state"] = "SIGNED"
+                reservation["signature_sha256"] = signature_sha256
+                self._write_reservation_state(state)
+                return reservation.copy()
+
+    def burn_w2(self, request_id: str, reason: str) -> dict:
+        if reason not in {"CANCELLED", "EXPIRED", "SIGN_FAILURE", "ABANDONED"}:
+            raise NonceError("W2 burn reason is invalid")
+        with self._lock:
+            with _file_lock(self.path.with_suffix(self.path.suffix + ".lock")):
+                state = self._read_reservation_state()
+                reservation = state.get("w2_reservations", {}).get(request_id)
+                if not isinstance(reservation, dict) or reservation.get("state") != "RESERVED":
+                    raise NonceError("W2 reservation cannot be burned from this state")
+                reservation["state"] = "BURNED"
+                reservation["burn_reason"] = reason
+                reservation["burned_at"] = time.time()
+                self._write_reservation_state(state)
+                return reservation.copy()
+
+    def get_w2(self, request_id: str) -> dict | None:
+        state = self._read_reservation_state()
+        item = state.get("w2_reservations", {}).get(request_id)
+        return item.copy() if isinstance(item, dict) else None
 
     def _read_reservation_state(self) -> dict:
         try:
@@ -103,6 +274,24 @@ class NonceStore:
             for k, v in requests.items()
         ):
             raise NonceError("nonce reservations are corrupt")
+        w2 = data.get("w2_reservations", {})
+        if not isinstance(w2, dict):
+            raise NonceError("W2 nonce reservations are corrupt")
+        for request_id, reservation in w2.items():
+            if not isinstance(request_id, str) or not re.fullmatch(r"w2draft1-[0-9a-f]{64}", request_id) or not isinstance(reservation, dict):
+                raise NonceError("W2 nonce reservations are corrupt")
+            lane = reservation.get("lane")
+            nonce = reservation.get("nonce")
+            if (reservation.get("request_id") != request_id or not isinstance(lane, str)
+                    or not lane or "|" in lane or not isinstance(nonce, str)
+                    or not re.fullmatch(r"[1-9][0-9]{0,18}", nonce)
+                    or counters.get(lane, 0) < int(nonce)
+                    or reservation.get("state") not in {"RESERVED", "APPROVED", "SIGNING_OUTCOME_UNCERTAIN", "SIGNED", "BURNED"}
+                    or not isinstance(reservation.get("signer_did"), str)
+                    or not isinstance(reservation.get("venue_origin"), str)
+                    or not isinstance(reservation.get("text_sha256"), str)
+                    or not isinstance(reservation.get("created_at"), (int, float))):
+                raise NonceError("W2 nonce reservations are corrupt")
         return data
 
     def _write_reservation_state(self, state: dict) -> None:

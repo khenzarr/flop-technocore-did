@@ -73,6 +73,16 @@ class DPAPIKeyProvider:
             # Python cannot guarantee zeroization; minimize the plaintext lifetime.
             del raw
 
+    def load_existing(self) -> Ed25519PrivateKey:
+        """W2 never enrolls or replaces a missing protected identity."""
+        if not self.path.is_file() or self.path.is_symlink():
+            raise FileNotFoundError("existing protected signer identity is required")
+        raw = dpapi.load(self.path)
+        try:
+            return Ed25519PrivateKey.from_private_bytes(raw)
+        finally:
+            del raw
+
 
 # Compatibility name retained for the frozen offline proof and its tests.
 DPAPITestKeyProvider = DPAPIKeyProvider
