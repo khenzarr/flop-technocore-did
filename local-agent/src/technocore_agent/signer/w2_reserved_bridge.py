@@ -283,7 +283,8 @@ def reserve_once(item: dict, *, custody: str, state: Path, actual_commit: str) -
     return {"schema": "technocore-w2-reservation/v1", "requestId": item["requestId"],
             "room": item["targetRoom"], "signerDid": selected_did,
             "venueOrigin": item["targetVenueOrigin"], "nonce": reservation["nonce"],
-            "state": reservation["state"], "createdAt": reservation["created_at"],
+            "state": reservation["state"], "generation": reservation.get("generation", 1),
+            "createdAt": reservation["created_at"],
             "canonicalCommit": actual_commit, "custodyMode": custody}
 
 

@@ -94,20 +94,29 @@ class NonceStore:
             with _file_lock(self.path.with_suffix(self.path.suffix + ".lock")):
                 state = self._read_reservation_state()
                 w2 = state.setdefault("w2_reservations", {})
+                history = state.setdefault("w2_reservation_history", {})
                 if not isinstance(w2, dict):
                     raise NonceError("W2 reservation state is corrupt")
+                if not isinstance(history, dict):
+                    raise NonceError("W2 reservation history is corrupt")
                 old = w2.get(request_id)
                 if old is not None:
                     if not isinstance(old, dict) or any(old.get(k) != v for k, v in binding.items()):
                         raise NonceError("W2 request id conflicts with its reservation")
-                    return old.copy()
+                    if old.get("state") != "BURNED":
+                        return old.copy()
+                    generations = history.setdefault(request_id, [])
+                    if not isinstance(generations, list):
+                        raise NonceError("W2 reservation history is corrupt")
+                    generations.append(old.copy())
                 if request_id in state["requests"]:
                     raise NonceError("W2 request id conflicts with a legacy reservation")
                 value = state["counters"].get(lane, 0) + 1
                 if value >= 10**19:
                     raise NonceError("W2 nonce exhausted")
+                generation = len(history.get(request_id, [])) + 1
                 reservation = {**binding, "nonce": str(value), "state": "RESERVED",
-                               "created_at": time.time()}
+                               "generation": generation, "created_at": time.time()}
                 state["counters"][lane] = value
                 w2[request_id] = reservation
                 self._write_reservation_state(state)
@@ -236,6 +245,11 @@ class NonceStore:
         item = state.get("w2_reservations", {}).get(request_id)
         return item.copy() if isinstance(item, dict) else None
 
+    def get_w2_history(self, request_id: str) -> list[dict]:
+        state = self._read_reservation_state()
+        history = state.get("w2_reservation_history", {}).get(request_id, [])
+        return [item.copy() for item in history]
+
     def _read_reservation_state(self) -> dict:
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
@@ -277,21 +291,40 @@ class NonceStore:
         w2 = data.get("w2_reservations", {})
         if not isinstance(w2, dict):
             raise NonceError("W2 nonce reservations are corrupt")
-        for request_id, reservation in w2.items():
+        history = data.get("w2_reservation_history", {})
+        if not isinstance(history, dict):
+            raise NonceError("W2 nonce reservation history is corrupt")
+
+        def valid_w2(request_id: str, reservation: dict, *, history_item: bool = False) -> bool:
             if not isinstance(request_id, str) or not re.fullmatch(r"w2draft1-[0-9a-f]{64}", request_id) or not isinstance(reservation, dict):
-                raise NonceError("W2 nonce reservations are corrupt")
+                return False
             lane = reservation.get("lane")
             nonce = reservation.get("nonce")
-            if (reservation.get("request_id") != request_id or not isinstance(lane, str)
+            generation = reservation.get("generation", 1)
+            return not (reservation.get("request_id") != request_id or not isinstance(lane, str)
                     or not lane or "|" in lane or not isinstance(nonce, str)
                     or not re.fullmatch(r"[1-9][0-9]{0,18}", nonce)
                     or counters.get(lane, 0) < int(nonce)
                     or reservation.get("state") not in {"RESERVED", "APPROVED", "SIGNING_OUTCOME_UNCERTAIN", "SIGNED", "BURNED"}
+                    or (history_item and reservation.get("state") != "BURNED")
+                    or not isinstance(generation, int) or isinstance(generation, bool) or generation < 1
                     or not isinstance(reservation.get("signer_did"), str)
                     or not isinstance(reservation.get("venue_origin"), str)
                     or not isinstance(reservation.get("text_sha256"), str)
-                    or not isinstance(reservation.get("created_at"), (int, float))):
+                    or not isinstance(reservation.get("created_at"), (int, float)))
+
+        for request_id, reservation in w2.items():
+            if not valid_w2(request_id, reservation):
                 raise NonceError("W2 nonce reservations are corrupt")
+        for request_id, generations in history.items():
+            if not isinstance(generations, list) or not generations:
+                raise NonceError("W2 nonce reservation history is corrupt")
+            for index, reservation in enumerate(generations, start=1):
+                if not valid_w2(request_id, reservation, history_item=True) or reservation.get("generation", index) != index:
+                    raise NonceError("W2 nonce reservation history is corrupt")
+            current = w2.get(request_id)
+            if not isinstance(current, dict) or current.get("generation") != len(generations) + 1:
+                raise NonceError("W2 nonce reservation generation is corrupt")
         return data
 
     def _write_reservation_state(self, state: dict) -> None:

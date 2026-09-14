@@ -111,6 +111,24 @@ def test_fixture_bridge_reserves_then_signs_exact_nonce(tmp_path):
     assert "private" not in raw.lower() and "pairing" not in raw.lower()
 
 
+def test_bridge_reuses_stable_draft_id_for_next_generation_after_cancel(tmp_path):
+    first = reserve_once(reserve_request(), custody="fixture", state=tmp_path, actual_commit=PIN)
+    cancel_once(cancel_request(), custody="fixture", state=tmp_path, actual_commit=PIN)
+    second = reserve_once(reserve_request(), custody="fixture", state=tmp_path, actual_commit=PIN)
+    assert first["requestId"] == second["requestId"] == REQUEST_ID
+    assert first["nonce"] == "1" and second["nonce"] == "2"
+    assert first["generation"] == 1 and second["generation"] == 2
+    assert reserve_once(reserve_request(), custody="fixture", state=tmp_path, actual_commit=PIN) == second
+    with pytest.raises(ValueError):
+        sign_once(sign_request("1"), custody="fixture", state=tmp_path,
+                  actual_commit=PIN, approval=FixtureApproval())
+    signed = sign_once(sign_request("2"), custody="fixture", state=tmp_path,
+                       actual_commit=PIN, approval=FixtureApproval())
+    assert signed["nonce"] == "2"
+    history = NonceStore(TrustedPaths.under(tmp_path).nonces).get_w2_history(REQUEST_ID)
+    assert len(history) == 1 and history[0]["state"] == "BURNED"
+
+
 def test_wrong_terminal_phrase_does_not_sign_but_nonce_stays_burned(tmp_path):
     reserve_once(reserve_request(), custody="fixture", state=tmp_path, actual_commit=PIN)
     with pytest.raises(PermissionError):

@@ -72,6 +72,47 @@ def test_concurrent_w2_reservations_are_unique(tmp_path):
     assert sorted(map(int, values)) == list(range(1, 25))
 
 
+def test_terminal_generation_retry_preserves_history_and_active_idempotency(tmp_path):
+    path = tmp_path / "nonce.json"
+    store = NonceStore(path)
+    first = reserve(store, 1)
+    assert first["nonce"] == "1" and first["generation"] == 1
+    burned = store.cancel_w2(**bound(first))
+    second = reserve(NonceStore(path), 1)
+    assert second["request_id"] == first["request_id"]
+    assert second["nonce"] == "2" and second["generation"] == 2
+    assert reserve(NonceStore(path), 1) == second
+    assert NonceStore(path).get_w2_history(first["request_id"]) == [burned]
+    data = json.loads(path.read_text())
+    assert data["counters"][ROOM] == 2
+
+
+def test_active_generation_signs_and_stale_burned_generation_is_refused(tmp_path):
+    store = NonceStore(tmp_path / "nonce.json")
+    first = reserve(store, 1)
+    store.cancel_w2(**bound(first))
+    second = reserve(store, 1)
+    store.approve_w2(**bound(second))
+    with pytest.raises(NonceError):
+        sign_reserved(store, first)
+    signed = sign_reserved(store, second)
+    assert str(signed.nonce) == "2"
+    assert store.get_w2_history(first["request_id"])[0]["state"] == "BURNED"
+
+
+def test_expired_generation_advances_and_parallel_duplicates_allocate_once(tmp_path):
+    path = tmp_path / "nonce.json"
+    first = reserve(NonceStore(path), 1)
+    NonceStore(path).cancel_w2(**bound(first), reason="EXPIRED")
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        values = list(pool.map(lambda _value: reserve(NonceStore(path), 1), range(24)))
+    assert {item["nonce"] for item in values} == {"2"}
+    assert {item["generation"] for item in values} == {2}
+    data = json.loads(path.read_text())
+    assert data["counters"][ROOM] == 2
+    assert data["w2_reservation_history"][first["request_id"]][0]["burn_reason"] == "EXPIRED"
+
+
 def test_reserved_w2_uses_exact_nonce_and_will_not_sign_again(tmp_path):
     path = tmp_path / "nonce.json"
     reserved = reserve(NonceStore(path), 1)
